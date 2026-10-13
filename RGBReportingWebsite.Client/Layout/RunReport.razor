@@ -1,0 +1,467 @@
+@page "/runReport/{reportDetailID:int}"
+
+@inject ReportDetailsService ReportDetailsService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+@using RGBReportingWebsite.Models
+@using System.Security.Claims
+
+@code {
+    private List<AccountManagerOption> _accountManagerApiOptions = new();
+    private bool _accountManagerApiLoading;
+    private string? _accountManagerApiError;
+    private int? _accountManagerApiLoadedReportId;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_report == null || _report.accountManagerSelect == null ||
+            _accountManagerApiLoadedReportId == _report.reportDetailID || _accountManagerApiLoading)
+        {
+            return;
+        }
+
+        var reportId = _report.reportDetailID;
+        _accountManagerApiLoading = true;
+        _accountManagerApiError = null;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var principal = authenticationState.User;
+            var login = principal.FindFirst(ClaimTypes.Email)?.Value
+                ?? principal.FindFirst("preferred_username")?.Value
+                ?? principal.Identity?.Name;
+
+            if (string.IsNullOrWhiteSpace(login))
+                throw new InvalidOperationException("Could not determine the logged-in user's login.");
+
+            _accountManagerApiOptions = await ReportDetailsService.GetAccountManagersAsync(reportId, login);
+            if (_selectedAccountManager is null ||
+                !_accountManagerApiOptions.Any(option => option.value == _selectedAccountManager))
+            {
+                _selectedAccountManager = 0;
+            }
+        }
+        catch (Exception ex)
+        {
+            _accountManagerApiError = ex.Message;
+        }
+        finally
+        {
+            _accountManagerApiLoadedReportId = reportId;
+            _accountManagerApiLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+}
+
+<PageTitle>@(_report?.Description ?? "Run Report")</PageTitle>
+
+<div class="reporting-page">
+    <div class="report-panel">
+
+        @if (_loading)
+        {
+            <div class="status-message">Loading report...</div>
+        }
+
+        else if (!string.IsNullOrWhiteSpace(_errorMessage))
+        {
+            <div class="alert alert-danger">@_errorMessage</div>
+
+            <div class="button-container">
+                <button type="button" class="back-button" @onclick="BackToReportingSystem">Back to Reporting System</button>
+            </div>
+        }
+        else if (_report == null)
+        {
+            <div class="alert alert-warning">The selected report could not be loaded.</div>
+
+            <div class="button-container">
+                <button type="button" class="back-button" @onclick="BackToReportingSystem">Back to Reporting System</button>
+            </div>
+        }
+        else
+        {
+            @* REPORT TITLE *@
+            <h1 class="report-title">@_report?.Description</h1>
+
+            @if (!string.IsNullOrWhiteSpace(_loggedInUser))
+            {
+                <div class="logged-in-user">
+                    <div class="logged-in-label">Logged in as:</div>
+                    <div class="logged-in-email">@_loggedInUser</div>
+                </div>
+            }
+
+            @* REPORT SUMMARY (card) *@
+            <div class="report-card">
+                <div class="card-row"><div class="label">Report ID:</div><div class="value">@_report?.reportDetailID</div></div>
+                <div class="card-row"><div class="label">Category:</div><div class="value">@_report?.Category</div></div>
+                <div class="card-row"><div class="label">Subcategory:</div><div class="value">@_report?.SubCategory</div></div>
+                <div class="card-row"><div class="label">Description:</div><div class="value">@_report?.Description</div></div>
+                <div class="card-row"><div class="label">Query Type:</div><div class="value">@_report?.QueryType</div></div>
+                <div class="card-row"><div class="label">Query Name:</div><div class="value">@_report?.QueryName</div></div>
+            </div>
+
+            @* MANUFACTURER *@
+            @if (!string.IsNullOrWhiteSpace(_report?.manufacturerSelect))
+            {
+                <div class="report-options" style="margin-bottom:16px;">
+                    <label for="manufacturer">Manufacturer</label>
+                    <select id="manufacturer" class="form-select option-select" @bind="_selectedManufacturer">
+                        <option value="ALL">All Manufacturers</option>
+                        @foreach (var manufacturer in _manufacturers)
+                        {
+                            <option value="@manufacturer.FirmCode.ToString()">@manufacturer.FirmName</option>
+                        }
+                    </select>
+                </div>
+            }
+
+            @* ACCOUNT MANAGER *@
+            @if (_report?.accountManagerSelect is not null)
+            {
+                <div class="report-options" style="margin-bottom:16px; width:560px; max-width:100%; margin-left:auto; margin-right:auto;">
+                    <label for="accountManager" style="display:block; text-align:center;">Account Manager</label>
+                    @if (_accountManagerApiLoading)
+                    {
+                        <div>Loading account managers...</div>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(_accountManagerApiError))
+                    {
+                        <div class="text-danger">@_accountManagerApiError</div>
+                    }
+                    else
+                    {
+                        <select id="accountManager" class="form-select option-select" style="display:block; width:100%; max-width:100%; margin-left:auto; margin-right:auto;" @bind="_selectedAccountManager">
+                            <option value="0">All account Managers</option>
+                            @foreach (var am in _accountManagerApiOptions)
+                            {
+                                <option value="@am.value">@am.text</option>
+                            }
+                        </select>
+                        @if (_accountManagerApiOptions.Count == 0)
+                        {
+                            <div>No account managers are available for this report.</div>
+                        }
+                    }
+                </div>
+            }
+
+            @* DATE RANGE *@
+            @if (!string.IsNullOrWhiteSpace(_report?.dateRangeSelect))
+            {
+                <div class="date-card">
+                    <div class="date-card-title">Date Range</div>
+                    <div class="date-range-fields centered">
+                        <div class="date-field">
+                            <label for="fromDate">From Date</label>
+                            <input id="fromDate" type="date" class="form-control date-input" @bind="_fromDate" @bind:format="yyyy-MM-dd" />
+                        </div>
+                        <div class="date-field">
+                            <label for="toDate">To Date</label>
+                            <input id="toDate" type="date" class="form-control date-input" @bind="_toDate" @bind:format="yyyy-MM-dd" />
+                        </div>
+                    </div>
+                </div>
+            }
+
+            <div class="button-row centered">
+                <button class="btn btn-download" @onclick="RunReportAsync" disabled="@(!_canRunReport)">Download Report</button>
+                <button class="btn btn-back" type="button" @onclick="BackToReportingSystem">Back</button>
+                <button class="btn btn-reporting" type="button" @onclick="BackToReportingSystem">Reporting System</button>
+            </div>
+        }
+
+    </div>
+</div>
+
+<style>
+    .reporting-page { display:flex; justify-content:center; padding:30px; }
+    .report-panel { width:100%; max-width:900px; background:#fff; border:1px solid #e1e1e1; border-radius:6px; padding:24px; box-shadow:0 2px 6px rgba(0,0,0,0.04); }
+    .report-title { font-family: 'Helvetica', Arial, sans-serif; font-size:32px; font-weight:700; text-align:center; margin:6px 0 12px 0; }
+    .logged-in-user { display:flex; justify-content:center; gap:8px; align-items:center; white-space:nowrap; font-family: 'Helvetica', Arial, sans-serif; }
+    .logged-in-label { font-size:12px; color:#666; }
+    .logged-in-email { font-size:12px; font-weight:700; color:#333; }
+    .report-details { margin-bottom:20px; }
+    .button-container { margin-top:18px; }
+    .report-card { background:#fafafa; border:1px solid #ececec; border-radius:6px; padding:18px; margin:18px auto; max-width:560px; }
+    .report-card .card-row { display:flex; padding:10px 0; border-bottom:1px solid #eee; align-items:center; }
+    .report-card .card-row:last-child { border-bottom:none; }
+    .report-card .label { width:170px; font-weight:600; color:#333; }
+    .report-card .value { flex:1; color:#444; }
+
+    .date-card { background:#fafafa; border:1px solid #ececec; border-radius:6px; padding:18px; margin:18px auto; max-width:700px; }
+    .date-card-title { text-align:center; font-weight:700; margin-bottom:12px; }
+    .date-range-fields.centered { display:flex; justify-content:center; gap:30px; }
+    .date-field { display:flex; flex-direction:column; align-items:center; }
+
+    /* Keep each Run Report action button within one third of the report frame */
+    .button-row.centered { display:flex; justify-content:center; gap:12px; width:100%; margin:0 auto; flex-wrap:wrap; }
+    .button-row.centered .btn { flex:0 1 calc((100% - 24px) / 3); max-width:calc((100% - 24px) / 3); white-space:normal; }
+
+    /* Button styles for RunReport actions */
+    .btn-download {
+        background-color: #0078d4;
+        color: #ffffff;
+        border: 1px solid #0066b3;
+        padding: 0.6rem 1rem;
+        border-radius: 6px;
+    }
+
+    .btn-download:hover {
+        background-color: #0066b3;
+        color: #fff;
+    }
+
+    .btn-back {
+        background-color: #6c757d;
+        color: #ffffff;
+        border: 1px solid #5a6268;
+        padding: 0.6rem 1rem;
+        border-radius: 6px;
+    }
+
+    .btn-back:hover {
+        background-color: #5a6268;
+    }
+
+    .btn-reporting {
+        background-color: #17a2b8;
+        color: #ffffff;
+        border: 1px solid #138496;
+        padding: 0.6rem 1rem;
+        border-radius: 6px;
+    }
+
+    .btn-reporting:hover {
+        background-color: #138496;
+    }
+
+    /* Disabled state */
+    .btn[disabled], .btn.disabled {
+        opacity: 0.65;
+        cursor: not-allowed;
+        box-shadow: none;
+    }
+</style>
+
+
+@code {
+    [Parameter]
+    public int reportDetailID { get; set; }
+
+    private bool _loading = true;
+    private string? _errorMessage;
+
+    private ReportDetail? _report;
+    private string? _loggedInUser;
+    private int? _loggedInUserNumeric = null;
+    private string? _loggedInUserFullName = null;
+
+    private List<Manufacturer> _manufacturers = new();
+    private List<Models.AccountManagerOption> _accountManagers = new();
+
+    private string _selectedManufacturer = "ALL";
+    private int? _selectedAccountManager = null;
+
+    private DateTime? _fromDate = null;
+    private DateTime? _toDate = null;
+
+    private bool _canRunReport => _report != null && (!_report.RequiresDateRange() || (_fromDate.HasValue && _toDate.HasValue));
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        _errorMessage = null;
+
+        try
+        {
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var userPrincipal = authState.User;
+
+            // Only use Email claim + server user context lookup (no other fallbacks)
+            string? userIDToUse = null;
+            var emailClaim = userPrincipal?.FindFirst(ClaimTypes.Email)?.Value?.Trim() ?? userPrincipal?.FindFirst("preferred_username")?.Value?.Trim();
+
+            if (string.IsNullOrWhiteSpace(emailClaim))
+            {
+                _errorMessage = "Unable to resolve user ID for report lookup.";
+                return;
+            }
+
+            var emailContext = await ReportDetailsService.GetUserContextAsync(emailClaim);
+            if (emailContext?.userID == null)
+            {
+                _errorMessage = "Unable to resolve user ID for report lookup.";
+                return;
+            }
+
+            userIDToUse = emailClaim; // send login/email to API; server resolves numeric id
+
+            _loggedInUser = userIDToUse;
+            // Cache numeric userID on the client so we can reuse it without reparsing
+            _loggedInUserNumeric = emailContext.userID;
+            _loggedInUserFullName = emailContext.fullName;
+            _report = (await ReportDetailsService.GetReportDetailsAsync(userIDToUse)).FirstOrDefault(r => r.reportDetailID == reportDetailID);
+
+            if (_report == null)
+            {
+                _errorMessage = "Selected report not found or you are not authorised to view it.";
+                return;
+            }
+
+            _manufacturers = await ReportDetailsService.GetManufacturersAsync();
+
+            // Always attempt to load account-manager options for this report. Use the
+            // cached numeric user id when available to avoid reparsing.
+            try
+            {
+                if (_report != null)
+                {
+                    if (_loggedInUserNumeric.HasValue)
+                    {
+                        _accountManagers = await ReportDetailsService.GetAccountManagersAsync(_loggedInUserNumeric.Value, _report.reportDetailID);
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore account-manager loading errors; leave _accountManagers empty
+                _accountManagers = new List<Models.AccountManagerOption>();
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void BackToReportingSystem()
+    {
+        try
+        {
+            JSRuntime.InvokeVoidAsync("history.back");
+        }
+        catch
+        {
+            Navigation.NavigateTo("/");
+        }
+    }
+
+    private async Task RunReportAsync()
+    {
+        if (_report == null)
+            return;
+
+        try
+        {
+            var query = new List<string>
+            {
+                $"format=excel",
+                $"userID={Uri.EscapeDataString(_loggedInUser ?? string.Empty)}"
+            };
+
+            if (!string.IsNullOrWhiteSpace(_selectedManufacturer) && _selectedManufacturer != "ALL")
+                query.Add($"manufacturerFirmCode={Uri.EscapeDataString(_selectedManufacturer)}");
+
+            if (_selectedAccountManager.HasValue)
+                query.Add($"accountManager={_selectedAccountManager.Value}");
+
+            if (_fromDate.HasValue)
+                query.Add($"fromDate={_fromDate.Value:yyyy-MM-dd}");
+
+            if (_toDate.HasValue)
+                query.Add($"toDate={_toDate.Value:yyyy-MM-dd}");
+
+            var url = $"api/RunReport/{_report.reportDetailID}/download?{string.Join("&", query)}";
+
+            using var resp = await Http.GetAsync(url);
+            var body = await resp.Content.ReadAsStringAsync();
+
+            if (!resp.IsSuccessStatusCode || !string.IsNullOrWhiteSpace(body) && body.TrimStart().StartsWith("<!DOCTYPE html", StringComparison.OrdinalIgnoreCase))
+            {
+                // Try fallback to local server port 7278 used by Visual Studio
+                var baseUri = new Uri(Navigation.BaseUri);
+                var builder = new UriBuilder(baseUri)
+                {
+                    Port = 7278,
+                    Path = $"api/RunReport/{_report.reportDetailID}/download",
+                    Query = string.Join("&", query)
+                };
+
+                using var fb = await Http.GetAsync(builder.Uri);
+                var fbText = await fb.Content.ReadAsStringAsync();
+                if (!fb.IsSuccessStatusCode)
+                    throw new InvalidOperationException($"API fallback returned {(int)fb.StatusCode} {fb.ReasonPhrase}: {fbText}");
+
+                var bytes = await fb.Content.ReadAsByteArrayAsync();
+                var base64 = Convert.ToBase64String(bytes);
+                var mime = fb.Content.Headers.ContentType?.MediaType ?? "application/octet-stream";
+                var filenameFb = BuildReportFilename();
+                await JSRuntime.InvokeVoidAsync("downloadBase64File", base64, filenameFb, mime);
+                return;
+            }
+
+            var bytesMain = await resp.Content.ReadAsByteArrayAsync();
+            var base64Main = Convert.ToBase64String(bytesMain);
+            var mimeMain = resp.Content.Headers.ContentType?.MediaType ?? "application/octet-stream";
+            var filename = BuildReportFilename();
+            await JSRuntime.InvokeVoidAsync("downloadBase64File", base64Main, filename, mimeMain);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+
+    private string BuildReportFilename()
+    {
+        string fileBaseName;
+        if (!string.IsNullOrWhiteSpace(_report?.SpreadsheetName))
+            fileBaseName = _report.SpreadsheetName!.Trim();
+        else if (!string.IsNullOrWhiteSpace(_report?.Description))
+            fileBaseName = _report.Description!.Trim();
+        else
+            fileBaseName = "Report";
+
+        var parts = new List<string> { fileBaseName };
+        if (!string.IsNullOrWhiteSpace(_selectedManufacturer) && _selectedManufacturer != "ALL")
+            parts.Add($"M{_selectedManufacturer}");
+        if (_fromDate.HasValue)
+            parts.Add($"from {_fromDate.Value:dd-MM-yyyy}");
+        if (_toDate.HasValue)
+            parts.Add($"to {_toDate.Value:dd-MM-yyyy}");
+        if (_selectedAccountManager.HasValue)
+        {
+            if (_selectedAccountManager.Value == 0)
+            {
+                parts.Add("All account Managers");
+            }
+            else
+            {
+                var selectedManager = _accountManagerApiOptions
+                    .FirstOrDefault(option => option.value == _selectedAccountManager.Value);
+                if (!string.IsNullOrWhiteSpace(selectedManager?.text))
+                    parts.Add($"for {selectedManager.text.Trim()}");
+            }
+        }
+
+        string joined = string.Join(" ", parts);
+        // Preserve spaces in filenames; only replace characters that are invalid in filenames or problematic in URLs
+        string safe = joined.Replace("/", "-").Replace(":", "-").Replace("\\", "-");
+
+        if (!safe.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+            safe += ".xlsx";
+
+        return safe;
+    }
+}

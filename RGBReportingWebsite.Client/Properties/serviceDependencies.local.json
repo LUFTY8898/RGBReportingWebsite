@@ -1,0 +1,16 @@
+{
+  "dependencies": {
+    "identityapp1": {
+      "connectionInfo": "App registration: RGB_Reporting, Tenant: R G B Communications Limited (rgbcomms.co.uk - Microsoft Entra ID)",
+      "type": "identityapp.default"
+    },
+    "secrets1": {
+      "type": "secrets.user"
+    },
+    "mssql1": {
+      "secretStore": "LocalSecretsFile",
+      "type": "mssql.onprem",
+      "connectionId": "RGB_Reporting"
+    }
+  }
+}

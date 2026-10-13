@@ -1,0 +1,214 @@
+﻿@page "/reportsMainMenu"
+
+@inject ReportDetailsService ReportDetailsService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+
+<PageTitle>Reporting System</PageTitle>
+
+<div class="reporting-menu">
+
+    <h1>Reporting System</h1>
+
+    @if (!string.IsNullOrWhiteSpace(_loggedInUser))
+    {
+        <p class="logged-in-user">
+            Logged in as: <strong>@_loggedInUser</strong>
+        </p>
+    }
+
+    @if (_loading)
+    {
+        <p>Loading reports...</p>
+    }
+    else if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <div class="alert alert-danger">
+            @_errorMessage
+        </div>
+    }
+    else if (_categories.Count == 0)
+    {
+        <div class="alert alert-info">
+            No reports are available for this user.
+        </div>
+    }
+    else
+    {
+        <div class="menu-grid">
+
+            @foreach (string category in _categories)
+            {
+                <button type="button"
+                        class="menu-button"
+                        @onclick="() => SelectCategory(category)">
+                    @($"{category} Reports")
+                </button>
+            }
+
+        </div>
+    }
+
+</div>
+
+
+@code {
+
+    private List<string> _categories = new();
+
+    private bool _loading = true;
+
+    private string? _errorMessage;
+
+    private string? _loggedInUser;
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Get the current authentication state
+            var authenticationState =
+                await AuthenticationStateProvider
+                    .GetAuthenticationStateAsync();
+
+            var user = authenticationState.User;
+
+
+            // Make sure the user is authenticated
+            if (user.Identity?.IsAuthenticated != true)
+            {
+                _errorMessage = "You are not logged in.";
+                return;
+            }
+
+
+            // Get the user's email address / login identity.
+            //
+            // Microsoft authentication commonly supplies the
+            // email/login as preferred_username.
+            //
+            // Try email next and Identity.Name as a fallback.
+
+            string? userID =
+                user.FindFirst("preferred_username")?.Value
+                ?? user.FindFirst("email")?.Value
+                ?? user.Identity?.Name;
+
+
+            if (string.IsNullOrWhiteSpace(userID))
+            {
+                _errorMessage =
+                    "Unable to determine the logged in user.";
+
+                return;
+            }
+
+
+            // Keep this temporarily so we can verify the value
+            // returned by Microsoft authentication.
+
+            _loggedInUser = userID;
+
+
+            // Ask the Server API for the reports that this
+            // particular user is allowed to access.
+
+            var reports =
+                await ReportDetailsService
+                    .GetReportDetailsAsync(userID);
+
+
+            // Create one menu button for each distinct category.
+
+            _categories = reports
+                .Where(r =>
+                    !string.IsNullOrWhiteSpace(r.Category))
+                .Select(r => r.Category!)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(category => category)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage =
+                "Unable to load reports: " + ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+
+    private void SelectCategory(string category)
+    {
+        Navigation.NavigateTo(
+        $"/reportSubMenu/{Uri.EscapeDataString(category)}");
+    }
+
+}
+
+
+<style>
+
+    .reporting-menu {
+        padding: 30px;
+    }
+
+        .reporting-menu h1 {
+            margin-bottom: 10px;
+            font-size: 32px;
+            font-weight: 600;
+            color: #333;
+            text-align: center;
+        }
+
+    .logged-in-user {
+        margin-bottom: 30px;
+        color: #666;
+        font-size: 14px;
+        text-align: center;
+    }
+
+    .menu-grid {
+        display: grid;
+
+        grid-template-columns:
+            repeat(auto-fit, minmax(220px, 1fr));
+
+        gap: 20px;
+        width: 100%;
+    }
+
+    .menu-button {
+        min-height: 90px;
+        padding: 20px;
+
+        background-color: #0078d4;
+        color: white;
+
+        border: none;
+        border-radius: 6px;
+
+        font-size: 18px;
+        font-weight: 600;
+
+        cursor: pointer;
+
+        transition:
+            background-color 0.2s ease,
+            transform 0.2s ease,
+            box-shadow 0.2s ease;
+    }
+
+    .menu-button:hover {
+        background-color: #005a9e;
+
+        transform: translateY(-2px);
+
+        box-shadow:
+            0 4px 10px rgba(0, 0, 0, 0.20);
+    }
+
+</style>

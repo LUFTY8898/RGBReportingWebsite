@@ -1,0 +1,273 @@
+/* ============================================================
+   NAVIGATION HEADER
+   ============================================================ */
+
+.top-row {
+    min-height: 4rem;
+    background: linear-gradient( 135deg, #071a2f 0%, #0b2d4f 100% );
+    border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+
+/* ============================================================
+   BRAND
+   ============================================================ */
+
+.navbar-brand {
+    color: #ffffff !important;
+    font-size: 1.2rem;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+
+    .navbar-brand:hover {
+        color: #7dd3fc !important;
+    }
+
+
+/* ============================================================
+   MOBILE TOGGLE
+   ============================================================ */
+
+.navbar-toggler {
+    background-color: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 8px;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+
+    .navbar-toggler:hover {
+        background-color: rgba(56, 189, 248, 0.25);
+        border-color: #38bdf8;
+    }
+
+
+/* ============================================================
+   NAVIGATION CONTAINER
+   ============================================================ */
+
+.nav-scrollable {
+    display: none;
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+}
+
+
+/* ============================================================
+   NAV ITEMS
+   ============================================================ */
+
+.nav-item {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.98rem;
+}
+
+
+    /* ============================================================
+   NORMAL NAVIGATION LINK
+   ============================================================ */
+
+    .nav-item ::deep .nav-link {
+        position: relative;
+        display: flex;
+        align-items: center;
+        width: 100%;
+        min-height: 3.1rem;
+        padding: 0.7rem 1rem;
+        color: #dbeafe;
+        background-color: rgba(255, 255, 255, 0.04);
+        border: 1px solid transparent;
+        border-radius: 10px;
+        font-weight: 500;
+        text-decoration: none;
+        transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+    }
+
+
+        /* ============================================================
+   HOVER
+   ============================================================ */
+
+        .nav-item ::deep .nav-link:hover {
+            color: #ffffff;
+            background: linear-gradient( 90deg, #0369a1 0%, #0284c7 100% );
+            border-color: #38bdf8;
+            transform: translateX(5px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.24);
+        }
+
+
+        /* ============================================================
+   ACTIVE / SELECTED PAGE
+   ============================================================ */
+
+        .nav-item ::deep .nav-link.active {
+            color: #082f49;
+            background: linear-gradient( 90deg, #7dd3fc 0%, #bae6fd 100% );
+            border-color: #e0f2fe;
+            font-weight: 700;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+        }
+
+
+            /* ============================================================
+   ACTIVE LEFT-HAND INDICATOR
+   ============================================================ */
+
+            .nav-item ::deep .nav-link.active::before {
+                position: absolute;
+                top: 8px;
+                bottom: 8px;
+                left: 5px;
+                width: 4px;
+                content: "";
+                background-color: #0c4a6e;
+                border-radius: 4px;
+            }
+
+
+            /* ============================================================
+   ACTIVE HOVER
+
+   Keeps the selected page visually selected even when hovered.
+   ============================================================ */
+
+            .nav-item ::deep .nav-link.active:hover {
+                color: #082f49;
+                background: linear-gradient( 90deg, #bae6fd 0%, #e0f2fe 100% );
+                border-color: #ffffff;
+                transform: translateX(3px);
+            }
+
+
+/* ============================================================
+   ICONS
+   ============================================================ */
+
+.bi {
+    display: inline-block;
+    position: relative;
+    width: 1.3rem;
+    height: 1.3rem;
+    margin-right: 0.85rem;
+    flex-shrink: 0;
+    background-size: cover;
+    opacity: 0.9;
+    transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+
+.nav-item ::deep .nav-link:hover .bi {
+    opacity: 1;
+    transform: scale(1.12);
+}
+
+
+.nav-item ::deep .nav-link.active .bi {
+    opacity: 1;
+}
+
+
+/* ============================================================
+   OPTIONAL SEPARATOR
+
+   Add class="nav-separator" to a div in NavMenu.razor
+   if you want to visually divide sections.
+   ============================================================ */
+
+.nav-separator {
+    height: 1px;
+    margin: 0.8rem 1rem;
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+
+/* ============================================================
+   OPTIONAL SECTION HEADING
+   ============================================================ */
+
+.nav-section-title {
+    padding: 0.8rem 1rem 0.35rem 1rem;
+    color: #7dd3fc;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.09rem;
+    text-transform: uppercase;
+}
+
+
+/* ============================================================
+   SCROLLBAR
+   ============================================================ */
+
+.nav-scrollable::-webkit-scrollbar {
+    width: 7px;
+}
+
+
+.nav-scrollable::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+
+.nav-scrollable::-webkit-scrollbar-thumb {
+    background-color: rgba(125, 211, 252, 0.4);
+    border-radius: 10px;
+}
+
+
+    .nav-scrollable::-webkit-scrollbar-thumb:hover {
+        background-color: rgba(125, 211, 252, 0.7);
+    }
+
+
+/* ============================================================
+   MOBILE
+   ============================================================ */
+
+@media (max-width: 640.98px) {
+
+    .nav-scrollable:not(.collapse) {
+        display: block;
+    }
+
+
+    .nav-item {
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
+    }
+
+
+        .nav-item ::deep .nav-link:hover {
+            transform: none;
+        }
+}
+
+
+/* ============================================================
+   DESKTOP
+   ============================================================ */
+
+@media (min-width: 641px) {
+
+    .navbar-toggler {
+        display: none;
+    }
+
+
+    .collapse {
+        display: block;
+    }
+
+
+    .nav-scrollable {
+        display: block;
+        height: calc(100vh - 4rem);
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+}

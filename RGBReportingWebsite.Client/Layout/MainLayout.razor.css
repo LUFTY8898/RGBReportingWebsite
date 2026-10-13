@@ -1,0 +1,138 @@
+.page {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+main {
+    flex: 1;
+}
+
+.sidebar {
+    /* Improved contrast gradient for left navigation */
+    background-image: linear-gradient(180deg, #052044 0%, #1b1333 100%);
+    color: #fff;
+}
+
+/* Sidebar navigation contrast and focus styles */
+.sidebar ::deep .nav {
+    padding-top: 0.5rem;
+}
+
+.sidebar ::deep .nav-link {
+    color: #dbeffd;
+    padding: 0.5rem 1rem;
+}
+
+.sidebar ::deep .nav-link:hover,
+.sidebar ::deep .nav-link.active {
+    color: #ffffff;
+    background-color: rgba(255,255,255,0.06);
+    border-radius: 0.25rem;
+    text-decoration: none;
+}
+
+.sidebar ::deep .bi {
+    color: #bfe2ff;
+    margin-right: 0.5rem;
+}
+
+.top-row {
+    background-color: #f7f7f7;
+    border-bottom: 1px solid #d6d5d5;
+    justify-content: flex-end;
+    height: 3.5rem;
+    display: flex;
+    align-items: center;
+}
+
+/* Centered welcome message */
+.top-message {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    font-weight: 600;
+    /* Slightly larger for better readability */
+    font-size: 1.125rem;
+    line-height: 1.2;
+    color: #333;
+}
+
+    .top-row ::deep a,
+    .top-row ::deep .btn-link {
+        white-space: nowrap;
+        margin-left: 1.5rem;
+        text-decoration: none;
+        /* Ensure link-style buttons (Log out) have no background */
+        background: transparent;
+        box-shadow: none;
+        border: none;
+        padding: 0;
+    }
+
+        .top-row ::deep a:hover,
+        .top-row ::deep .btn-link:hover,
+        .top-row ::deep .btn-link:focus,
+        .top-row ::deep .btn-link:active {
+            text-decoration: underline;
+            background: transparent;
+            box-shadow: none;
+        }
+
+        .top-row ::deep a:first-child {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+@media (max-width: 640.98px) {
+
+    .top-row {
+        justify-content: space-between;
+    }
+
+        .top-row ::deep a,
+        .top-row ::deep .btn-link {
+            margin-left: 0;
+        }
+}
+
+@media (min-width: 641px) {
+
+    .page {
+        flex-direction: row;
+    }
+
+    .sidebar {
+        width: 250px;
+        height: 100vh;
+        position: sticky;
+        top: 0;
+        flex-shrink: 0;
+    }
+
+    main {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .top-row {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+    }
+
+        .top-row.auth ::deep a:first-child {
+            flex: 1;
+            text-align: right;
+            width: 0;
+        }
+
+    .top-row,
+    article {
+        padding-left: 2rem !important;
+        padding-right: 1.5rem !important;
+    }
+}
+
+``

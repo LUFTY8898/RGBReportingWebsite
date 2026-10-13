@@ -1,0 +1,14 @@
+{
+  "dependencies": {
+    "identityapp1": {
+      "type": "identityapp"
+    },
+    "secrets1": {
+      "type": "secrets"
+    },
+    "mssql1": {
+      "type": "mssql",
+      "connectionId": "RGB_Reporting"
+    }
+  }
+}

@@ -1,0 +1,6 @@
+@RGBReportingWebsite.Server_HostAddress = http://localhost:5200
+
+GET {{RGBReportingWebsite.Server_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

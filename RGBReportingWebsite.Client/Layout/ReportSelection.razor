@@ -1,0 +1,250 @@
+﻿@page "/reports/{Category}/{SubCategory}"
+
+@inject ReportDetailsService ReportDetailsService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+
+<PageTitle>@SubCategory Reports</PageTitle>
+
+<div class="reporting-menu">
+
+    <h1>@SubCategory Reports</h1>
+
+    @if (!string.IsNullOrWhiteSpace(_loggedInUser))
+    {
+        <p class="logged-in-user">
+            Logged in as: <strong>@_loggedInUser</strong>
+        </p>
+    }
+
+    @if (_loading)
+    {
+        <p class="message">
+            Loading reports...
+        </p>
+    }
+    else if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <div class="alert alert-danger">
+            @_errorMessage
+        </div>
+    }
+    else if (_reports.Count == 0)
+    {
+        <div class="alert alert-info">
+            No reports are available.
+        </div>
+    }
+    else
+    {
+        <div class="menu-grid">
+
+            @foreach (var report in _reports)
+            {
+                <button type="button"
+                        class="menu-button"
+                        style="width:min(33.333vw, 420px) !important; max-width:min(33.333vw, 420px) !important; box-sizing:border-box; justify-self:center;"
+                        @onclick="() => SelectReport(report.reportDetailID)">
+                    @report.Description
+                </button>
+            }
+
+        </div>
+    }
+
+    <div class="back-container">
+
+        <button type="button"
+                class="back-button"
+                @onclick="BackToSubMenu">
+            Back to @Category Reports
+        </button>
+
+    </div>
+
+</div>
+
+
+@code {
+
+    [Parameter]
+    public string Category { get; set; } = string.Empty;
+
+
+    [Parameter]
+    public string SubCategory { get; set; } = string.Empty;
+
+
+    private List<ReportDetail> _reports = new();
+
+    private bool _loading = true;
+
+    private string? _errorMessage;
+
+    private string? _loggedInUser;
+
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        _errorMessage = null;
+
+        try
+        {
+            var authenticationState =
+                await AuthenticationStateProvider
+                    .GetAuthenticationStateAsync();
+
+            var user = authenticationState.User;
+
+
+            if (user.Identity?.IsAuthenticated != true)
+            {
+                _errorMessage = "You are not logged in.";
+                return;
+            }
+
+
+            string? userID =
+                user.FindFirst("preferred_username")?.Value
+                ?? user.FindFirst("email")?.Value
+                ?? user.Identity?.Name;
+
+
+            if (string.IsNullOrWhiteSpace(userID))
+            {
+                _errorMessage =
+                    "Unable to determine the logged in user.";
+
+                return;
+            }
+
+
+            _loggedInUser = userID;
+
+
+            var reports =
+                await ReportDetailsService
+                    .GetReportDetailsAsync(userID);
+
+
+            _reports = reports
+                .Where(r =>
+                    string.Equals(
+                        r.Category,
+                        Category,
+                        StringComparison.OrdinalIgnoreCase)
+                    &&
+                    string.Equals(
+                        r.SubCategory,
+                        SubCategory,
+                        StringComparison.OrdinalIgnoreCase)
+                    &&
+                    !string.IsNullOrWhiteSpace(r.Description))
+                .OrderBy(r => r.Description)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage =
+                "Unable to load reports: " + ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+
+    private void SelectReport(int reportDetailID)
+    {
+        Navigation.NavigateTo(
+            $"/runReport/{reportDetailID}");
+    }
+
+
+    private void BackToSubMenu()
+    {
+        Navigation.NavigateTo(
+            $"/reportSubMenu/{Uri.EscapeDataString(Category)}");
+    }
+
+}
+
+
+<style>
+
+    .reporting-menu {
+        padding: 30px;
+    }
+
+        .reporting-menu h1 {
+            margin-bottom: 10px;
+            font-size: 32px;
+            font-weight: 600;
+            color: #333;
+            text-align: center;
+        }
+
+    .logged-in-user {
+        margin-bottom: 30px;
+        color: #666;
+        font-size: 14px;
+        text-align: center;
+    }
+
+    .message {
+        text-align: center;
+    }
+
+    .menu-grid {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 20px;
+        width: 100%;
+    }
+
+    .menu-button {
+        width: 100%;
+        max-width: min(33.333vw, 420px);
+        flex: 0 1 min(33.333vw, 420px);
+        box-sizing: border-box;
+        min-height: 90px;
+        padding: 20px;
+        background-color: #0078d4;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 18px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+        .menu-button:hover {
+            background-color: #005a9e;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.20);
+        }
+
+    .back-container {
+        margin-top: 30px;
+        text-align: center;
+    }
+
+    .back-button {
+        padding: 10px 20px;
+        background-color: #6c757d;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        font-size: 14px;
+        cursor: pointer;
+    }
+
+        .back-button:hover {
+            background-color: #565e64;
+        }
+
+</style>

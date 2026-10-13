@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 18
+VisualStudioVersion = 18.10.12224.181
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RGBReportingWebsite.Client", "RGBReportingWebsite.Client\RGBReportingWebsite.Client.csproj", "{36C693B6-62D1-604C-09AE-5850EBB201C8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RGBReportingWebsite.Server", "RGBReportingWebsite.Server\RGBReportingWebsite.Server.csproj", "{95EE9862-6232-97AD-BDC4-1B9E3A2DCD2F}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{36C693B6-62D1-604C-09AE-5850EBB201C8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{36C693B6-62D1-604C-09AE-5850EBB201C8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{36C693B6-62D1-604C-09AE-5850EBB201C8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{36C693B6-62D1-604C-09AE-5850EBB201C8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{95EE9862-6232-97AD-BDC4-1B9E3A2DCD2F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{95EE9862-6232-97AD-BDC4-1B9E3A2DCD2F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{95EE9862-6232-97AD-BDC4-1B9E3A2DCD2F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{95EE9862-6232-97AD-BDC4-1B9E3A2DCD2F}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {F61C2B29-4CF8-4FB8-A379-86E631B7B9A9}
+	EndGlobalSection
+EndGlobal
