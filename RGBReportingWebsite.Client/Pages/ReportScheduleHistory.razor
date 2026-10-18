@@ -1,0 +1,125 @@
+@page "/reportScheduleAdministration/{scheduleID:int}/history"
+@attribute [Authorize]
+
+@using RGBReportingWebsite.Models
+@inject HttpClient Http
+@inject PagePermissionService PagePermissions
+
+<PageTitle>Report Schedule History</PageTitle>
+
+@if (!_accessChecked)
+{
+    <p>Checking permissions...</p>
+}
+else if (!_isAdministrator)
+{
+    <p role="alert">You are not authorized to view report schedule history.</p>
+}
+else if (_loading)
+{
+    <p>Loading run history...</p>
+}
+else
+{
+    <main class="history-page">
+        <header class="page-heading">
+            <div>
+                <p class="eyebrow">REPORT SCHEDULE</p>
+                <h1>Run history</h1>
+                <p>Schedule: @_schedule?.reportName</p>
+            </div>
+            <a href="/reportScheduleAdministration">Back to schedules</a>
+        </header>
+
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <div class="alert alert-danger" role="alert">@_error</div>
+        }
+
+        <section class="panel">
+            @if (_history.Count == 0)
+            {
+                <p>No history is recorded for this schedule.</p>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table align-middle">
+                        <thead><tr><th>Date</th><th>Result</th><th>To</th><th>CC</th><th>BCC</th><th>Error</th></tr></thead>
+                        <tbody>
+                            @foreach (var item in _history)
+                            {
+                                <tr @key="item.reportScheduleHistoryID">
+                                    <td>@item.reportScheduleHistoryDate?.ToString("g")</td>
+                                    <td>@(item.successful == true ? "Success" : item.successful == false ? "Failed" : "Unknown")</td>
+                                    <td class="history-address">@item.toEmailAddress</td>
+                                    <td class="history-address">@item.ccEmailAddress</td>
+                                    <td class="history-address">@item.BccEmailAddress</td>
+                                    <td>@item.errorMessage</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    </main>
+}
+
+@code {
+    [Parameter] public int scheduleID { get; set; }
+
+    private ReportSchedule? _schedule;
+    private List<ReportScheduleHistoryRecord> _history = new();
+    private bool _accessChecked;
+    private bool _isAdministrator;
+    private bool _loading = true;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isAdministrator = await PagePermissions.IsAdministratorAsync();
+        _accessChecked = true;
+        if (!_isAdministrator)
+        {
+            _loading = false;
+            return;
+        }
+
+        try
+        {
+            var schedulesTask = Http.GetFromJsonAsync<List<ReportSchedule>>("api/Admin/reportSchedules");
+            var historyTask = Http.GetFromJsonAsync<List<ReportScheduleHistoryRecord>>(
+                $"api/Admin/reportSchedules/{scheduleID}/history");
+            await Task.WhenAll(schedulesTask, historyTask);
+
+            _schedule = (await schedulesTask)?.FirstOrDefault(item => item.scheduledReportID == scheduleID);
+            if (_schedule is null)
+            {
+                _error = "The requested schedule was not found.";
+                return;
+            }
+
+            _history = await historyTask ?? new();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Unable to load run history: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}
+
+<style>
+    .history-page { max-width: 1250px; margin: 0 auto; padding: 2rem clamp(1rem, 3vw, 2.5rem); }
+    .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.5rem; }
+    .page-heading h1 { margin: 0; }
+    .page-heading p { margin: .4rem 0 0; }
+    .eyebrow { color: #3867d6; font-size: .75rem; font-weight: 700; letter-spacing: .12em; }
+    .panel { padding: 1.25rem; border: 1px solid #e3e8ef; border-radius: .8rem; background: #fff; }
+    .history-address { max-width: 220px; overflow-wrap: anywhere; }
+    @@media (max-width: 700px) { .page-heading { align-items: flex-start; flex-direction: column; } }
+</style>

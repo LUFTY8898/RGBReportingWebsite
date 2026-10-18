@@ -1,0 +1,130 @@
+@page "/reportScheduleAdministration/{scheduleID:int}/recipients"
+@attribute [Authorize]
+
+@using RGBReportingWebsite.Models
+@inject HttpClient Http
+@inject PagePermissionService PagePermissions
+
+<PageTitle>Scheduled Report Recipients</PageTitle>
+
+@if (!_accessChecked)
+{
+    <p>Checking permissions...</p>
+}
+else if (!_isAdministrator)
+{
+    <p role="alert">You are not authorized to manage report schedules.</p>
+}
+else if (_loading)
+{
+    <p>Loading recipients...</p>
+}
+else
+{
+    <main class="recipient-page">
+        <header class="page-heading">
+            <div>
+                <p class="eyebrow">REPORT SCHEDULE</p>
+                <h1>Email recipients</h1>
+                <p>Schedule: @_schedule?.reportName</p>
+            </div>
+            <a href="/reportScheduleAdministration">Back to schedules</a>
+        </header>
+
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <div class="alert alert-danger" role="alert">@_error</div>
+        }
+
+        <section class="panel">
+            <div class="panel-heading">
+                <h2>Recipients</h2>
+                <a class="btn btn-primary" href="/reportScheduleAdministration/@scheduleID/recipients/new">Add recipient</a>
+            </div>
+
+            @if (_emails.Count == 0)
+            {
+                <p>No recipients are configured for this schedule.</p>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table align-middle">
+                        <thead><tr><th>User</th><th>Type</th><th>Frequency</th><th>Run time</th><th>Active</th><th>Actions</th></tr></thead>
+                        <tbody>
+                            @foreach (var email in _emails)
+                            {
+                                <tr @key="email.reportScheduleEmailID">
+                                    <td>@(string.IsNullOrWhiteSpace(email.fullName) ? email.loginID : $"{email.fullName} ({email.loginID})")</td>
+                                    <td>@email.type</td>
+                                    <td>@email.frequency</td>
+                                    <td>@(email.runTime?.ToString(@"hh\:mm") ?? "")</td>
+                                    <td>@(email.active == true ? "Yes" : "No")</td>
+                                    <td class="actions">
+                                        <a class="btn btn-sm btn-outline-primary" href="/reportScheduleAdministration/@scheduleID/recipients/@email.reportScheduleEmailID/edit">Edit</a>
+                                        <a class="btn btn-sm btn-outline-danger" href="/reportScheduleAdministration/@scheduleID/recipients/@email.reportScheduleEmailID/delete">Delete</a>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    </main>
+}
+
+@code {
+    [Parameter] public int scheduleID { get; set; }
+
+    private ReportSchedule? _schedule;
+    private List<ReportScheduleEmail> _emails = new();
+    private bool _accessChecked;
+    private bool _isAdministrator;
+    private bool _loading = true;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isAdministrator = await PagePermissions.IsAdministratorAsync();
+        _accessChecked = true;
+        if (!_isAdministrator)
+        {
+            _loading = false;
+            return;
+        }
+
+        try
+        {
+            var schedulesTask = Http.GetFromJsonAsync<List<ReportSchedule>>("api/Admin/reportSchedules");
+            var emailsTask = Http.GetFromJsonAsync<List<ReportScheduleEmail>>(
+                $"api/Admin/reportSchedules/{scheduleID}/emails");
+            await Task.WhenAll(schedulesTask, emailsTask);
+            _schedule = (await schedulesTask)?.FirstOrDefault(item => item.scheduledReportID == scheduleID);
+            _emails = await emailsTask ?? new();
+            if (_schedule is null)
+                _error = "The requested schedule was not found.";
+        }
+        catch (Exception ex)
+        {
+            _error = $"Unable to load recipients: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}
+
+<style>
+    .recipient-page { max-width: 1250px; margin: 0 auto; padding: 2rem clamp(1rem, 3vw, 2.5rem); }
+    .page-heading, .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+    .page-heading { margin-bottom: 1.5rem; }
+    .page-heading h1, .panel-heading h2 { margin: 0; }
+    .page-heading p { margin: .4rem 0 0; }
+    .eyebrow { color: #3867d6; font-size: .75rem; font-weight: 700; letter-spacing: .12em; }
+    .panel { padding: 1.25rem; border: 1px solid #e3e8ef; border-radius: .8rem; background: #fff; }
+    .panel-heading { margin-bottom: 1rem; }
+    .actions { display: flex; gap: .4rem; white-space: nowrap; }
+    @@media (max-width: 700px) { .page-heading, .panel-heading { align-items: flex-start; flex-direction: column; } .actions { flex-wrap: wrap; } }
+</style>

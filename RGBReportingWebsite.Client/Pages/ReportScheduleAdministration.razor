@@ -1,0 +1,134 @@
+@page "/reportScheduleAdministration"
+@attribute [Authorize]
+
+@using RGBReportingWebsite.Models
+@inject HttpClient Http
+@inject PagePermissionService PagePermissions
+
+<PageTitle>Report Schedule Administration</PageTitle>
+
+@if (!_accessChecked)
+{
+    <p>Checking permissions...</p>
+}
+else if (!_isAdministrator)
+{
+    <p role="alert">You are not authorized to manage report schedules.</p>
+}
+else
+{
+    <main class="schedule-admin">
+        <header class="page-heading">
+            <div>
+                <p class="eyebrow">ADMINISTRATION</p>
+                <h1>Report schedules</h1>
+                <p>Manage scheduled reports and their email recipients and frequency.</p>
+            </div>
+            <a href="/administration">Back to administration</a>
+        </header>
+
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <div class="alert alert-danger" role="alert">@_error</div>
+        }
+
+        @if (_loading)
+        {
+            <p>Loading schedules...</p>
+        }
+        else
+        {
+            <section class="panel">
+                <div class="panel-heading">
+                    <div>
+                        <h2>Scheduled reports</h2>
+                        <p>@_schedules.Count schedule(s)</p>
+                    </div>
+                    <a class="btn btn-primary" href="/reportScheduleAdministration/new">New schedule</a>
+                </div>
+
+                @if (_schedules.Count == 0)
+                {
+                    <p>No scheduled reports are configured.</p>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table align-middle">
+                            <thead>
+                                <tr><th>Order</th><th>Name</th><th>Spreadsheet</th><th>Enabled</th><th>Actions</th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var schedule in _schedules)
+                                {
+                                    <tr @key="schedule.scheduledReportID">
+                                        <td>@schedule.reportRunOrder</td>
+                                        <td>@schedule.reportName</td>
+                                        <td>@schedule.spreadsheetName</td>
+                                        <td>@(schedule.enabled == true ? "Yes" : "No")</td>
+                                        <td class="actions">
+                                            <a class="btn btn-sm btn-outline-primary" href="/reportScheduleAdministration/@schedule.scheduledReportID/edit">Edit</a>
+                                            <a class="btn btn-sm btn-outline-secondary" href="/reportScheduleAdministration/@schedule.scheduledReportID/recipients">Recipients</a>
+                                            <a class="btn btn-sm btn-outline-secondary" href="/reportScheduleAdministration/@schedule.scheduledReportID/history">History</a>
+                                            <a class="btn btn-sm btn-outline-danger" href="/reportScheduleAdministration/@schedule.scheduledReportID/delete">Delete</a>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
+        }
+    </main>
+}
+
+@code {
+    private List<ReportSchedule> _schedules = new();
+    private bool _accessChecked;
+    private bool _isAdministrator;
+    private bool _loading = true;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isAdministrator = await PagePermissions.IsAdministratorAsync();
+        _accessChecked = true;
+        if (!_isAdministrator)
+        {
+            _loading = false;
+            return;
+        }
+
+        try
+        {
+            _schedules = await Http.GetFromJsonAsync<List<ReportSchedule>>("api/Admin/reportSchedules") ?? new();
+            _schedules = _schedules.OrderBy(item => item.reportRunOrder ?? int.MaxValue)
+                .ThenBy(item => item.reportName, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Unable to load report schedules: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}
+
+<style>
+    .schedule-admin { max-width: 1250px; margin: 0 auto; padding: 2rem clamp(1rem, 3vw, 2.5rem); }
+    .page-heading, .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+    .page-heading { margin-bottom: 1.5rem; }
+    .page-heading h1 { margin: 0; }
+    .page-heading p { margin: .4rem 0 0; }
+    .eyebrow { color: #3867d6; font-size: .75rem; font-weight: 700; letter-spacing: .12em; }
+    .panel { margin-bottom: 1.25rem; padding: 1.25rem; border: 1px solid #e3e8ef; border-radius: .8rem; background: #fff; }
+    .panel-heading { margin-bottom: 1rem; }
+    .panel-heading h2 { margin: 0; }
+    .panel-heading p { margin: .3rem 0 0; color: #697586; }
+    .actions { white-space: nowrap; display: flex; gap: .4rem; }
+    @@media (max-width: 700px) { .page-heading, .panel-heading { align-items: flex-start; flex-direction: column; } .actions { flex-wrap: wrap; } }
+</style>

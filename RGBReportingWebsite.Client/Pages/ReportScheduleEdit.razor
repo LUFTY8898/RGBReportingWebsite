@@ -1,0 +1,191 @@
+@page "/reportScheduleAdministration/new"
+@page "/reportScheduleAdministration/{scheduleID:int}/edit"
+@attribute [Authorize]
+
+@using RGBReportingWebsite.Models
+@inject HttpClient Http
+@inject PagePermissionService PagePermissions
+@inject NavigationManager Navigation
+
+<PageTitle>@(_isNew ? "New Report Schedule" : "Edit Report Schedule")</PageTitle>
+
+@if (!_accessChecked)
+{
+    <p>Checking permissions...</p>
+}
+else if (!_isAdministrator)
+{
+    <p role="alert">You are not authorized to manage report schedules.</p>
+}
+else if (_loading)
+{
+    <p>Loading schedule...</p>
+}
+else
+{
+    <main class="schedule-edit">
+        <header>
+            <p class="eyebrow">ADMINISTRATION</p>
+            <h1>@(_isNew ? "New schedule" : "Edit schedule")</h1>
+        </header>
+
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <div class="alert alert-danger" role="alert">@_error</div>
+        }
+
+        <section class="panel">
+            <div class="form-grid">
+                <label>Report name<input class="form-control" maxlength="70" @bind="_form.reportName" /></label>
+                <label>Spreadsheet name<input class="form-control" maxlength="70" @bind="_form.spreadsheetName" /></label>
+                <label>Run order<input class="form-control" type="number" @bind="_form.reportRunOrder" /></label>
+                <label>Grouping ID<input class="form-control" type="number" @bind="_form.reportGroupingID" /></label>
+                <label>Parameter 1<input class="form-control" maxlength="50" @bind="_form.parameter1" /></label>
+                <label>Parameter 1 name<input class="form-control" maxlength="50" @bind="_form.parameter1Name" /></label>
+                <label>Filter command<input class="form-control" maxlength="255" @bind="_form.filterCommand" /></label>
+                <label>Filter command name<input class="form-control" maxlength="50" @bind="_form.filterCommandName" /></label>
+                <label class="check-label"><input type="checkbox" class="form-check-input" @bind="_form.enabled" /> Enabled</label>
+            </div>
+            <div class="form-actions">
+                <button class="btn btn-primary" disabled="@_saving" @onclick="SaveAsync">@(_saving ? "Saving..." : "Save schedule")</button>
+                <a class="btn btn-outline-secondary" href="/reportScheduleAdministration">Cancel</a>
+            </div>
+        </section>
+    </main>
+}
+
+@code {
+    [Parameter] public int scheduleID { get; set; }
+
+    private ScheduleForm _form = new();
+    private bool _accessChecked;
+    private bool _isAdministrator;
+    private bool _loading = true;
+    private bool _saving;
+    private string? _error;
+    private bool _isNew => scheduleID <= 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isAdministrator = await PagePermissions.IsAdministratorAsync();
+        _accessChecked = true;
+        if (!_isAdministrator)
+        {
+            _loading = false;
+            return;
+        }
+
+        if (_isNew)
+        {
+            _loading = false;
+            return;
+        }
+
+        try
+        {
+            var schedules = await Http.GetFromJsonAsync<List<ReportSchedule>>("api/Admin/reportSchedules") ?? new();
+            var schedule = schedules.FirstOrDefault(item => item.scheduledReportID == scheduleID);
+            if (schedule is null)
+            {
+                _error = "The requested schedule was not found.";
+                return;
+            }
+
+            _form = ScheduleForm.From(schedule);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Unable to load the schedule: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_form.reportName))
+        {
+            _error = "Report name is required.";
+            return;
+        }
+
+        _saving = true;
+        _error = null;
+        try
+        {
+            var payload = _form.ToDto(scheduleID);
+            using var response = _isNew
+                ? await Http.PostAsJsonAsync("api/Admin/reportSchedules", payload)
+                : await Http.PutAsJsonAsync($"api/Admin/reportSchedules/{scheduleID}", payload);
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(body)
+                    ? $"Save failed ({(int)response.StatusCode})."
+                    : $"Save failed ({(int)response.StatusCode}): {body}");
+            }
+
+            Navigation.NavigateTo("/reportScheduleAdministration");
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private sealed class ScheduleForm
+    {
+        public int? reportRunOrder { get; set; }
+        public int? reportGroupingID { get; set; }
+        public string? reportName { get; set; }
+        public string? spreadsheetName { get; set; }
+        public string? parameter1 { get; set; }
+        public string? parameter1Name { get; set; }
+        public string? filterCommand { get; set; }
+        public string? filterCommandName { get; set; }
+        public bool enabled { get; set; } = true;
+
+        public ReportSchedule ToDto(int id) => new()
+        {
+            scheduledReportID = id,
+            reportRunOrder = reportRunOrder,
+            reportGroupingID = reportGroupingID,
+            reportName = reportName,
+            spreadsheetName = spreadsheetName,
+            parameter1 = parameter1,
+            parameter1Name = parameter1Name,
+            filterCommand = filterCommand,
+            filterCommandName = filterCommandName,
+            enabled = enabled
+        };
+
+        public static ScheduleForm From(ReportSchedule schedule) => new()
+        {
+            reportRunOrder = schedule.reportRunOrder,
+            reportGroupingID = schedule.reportGroupingID,
+            reportName = schedule.reportName,
+            spreadsheetName = schedule.spreadsheetName,
+            parameter1 = schedule.parameter1,
+            parameter1Name = schedule.parameter1Name,
+            filterCommand = schedule.filterCommand,
+            filterCommandName = schedule.filterCommandName,
+            enabled = schedule.enabled == true
+        };
+    }
+}
+
+<style>
+    .schedule-edit { max-width: 1000px; margin: 0 auto; padding: 2rem clamp(1rem, 3vw, 2.5rem); }
+    .eyebrow { color: #3867d6; font-size: .75rem; font-weight: 700; letter-spacing: .12em; }
+    .panel { padding: 1.25rem; border: 1px solid #e3e8ef; border-radius: .8rem; background: #fff; }
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+    .form-grid label { display: flex; flex-direction: column; gap: .35rem; font-weight: 600; }
+    .form-grid .check-label { flex-direction: row; align-items: center; align-self: end; }
+    .form-actions { display: flex; gap: .6rem; margin-top: 1rem; }
+</style>

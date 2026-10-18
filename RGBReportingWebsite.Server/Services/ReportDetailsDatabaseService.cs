@@ -162,6 +162,11 @@ namespace RGBReportingWebsite.Server.Services
 
         public async Task<List<ReportDetail>> GetReportDetailsAsync(string userID)
         {
+            return await GetReportDetailsAsync(userID, null);
+        }
+
+        private async Task<List<ReportDetail>> GetReportDetailsAsync(string userID, int? requestedReportDetailID)
+        {
             List<ReportDetail> reports = new();
 
             const string sql = @"
@@ -214,6 +219,7 @@ namespace RGBReportingWebsite.Server.Services
                     ON rp.userID = ru.userID
                 WHERE rp.userID = @NumericUserID
                 AND ISNULL(rp.enabled, 0) = 1
+                AND (@ReportDetailID IS NULL OR rd.reportDetailID = @ReportDetailID)
                     ORDER BY
                     rd.category,
                     rd.subCategory,
@@ -279,6 +285,11 @@ namespace RGBReportingWebsite.Server.Services
             {
                 command.Parameters.Add("@NumericUserID", SqlDbType.Int).Value = DBNull.Value;
             }
+
+            command.Parameters.Add("@ReportDetailID", SqlDbType.Int).Value =
+                requestedReportDetailID.HasValue
+                    ? requestedReportDetailID.Value
+                    : DBNull.Value;
 
             await using SqlDataReader reader =
                 await command.ExecuteReaderAsync();
@@ -624,11 +635,11 @@ namespace RGBReportingWebsite.Server.Services
 
         public async Task<ReportDetail?> GetReportDetailAsync(int reportDetailID, string userID)
         {
-            var reports =
-                await GetReportDetailsAsync(userID);
+            if (reportDetailID <= 0 || string.IsNullOrWhiteSpace(userID))
+                return null;
 
-            return reports.FirstOrDefault(
-                r => r.reportDetailID == reportDetailID);
+            var reports = await GetReportDetailsAsync(userID, reportDetailID);
+            return reports.FirstOrDefault();
         }
 
         // Get SAP ids and user info by login (azure email or loginID)
@@ -640,7 +651,8 @@ namespace RGBReportingWebsite.Server.Services
             string normalized = login.Trim().ToLowerInvariant();
 
             const string sql = @"
-                SELECT TOP(1) userID, SAPuserID, SAPsalesID, fullName, loginID
+                SELECT TOP(1) userID, SAPuserID, SAPsalesID, fullName, loginID,
+                       runReports, scheduleReports, manageReports, administrator
                 FROM dbo.reportUsers WHERE LOWER(LTRIM(RTRIM(loginID))) = @loginNormalized;";
 
             try
@@ -670,6 +682,18 @@ namespace RGBReportingWebsite.Server.Services
                     ord = reader.GetOrdinal("fullName");
                     if (!reader.IsDBNull(ord)) ctx.fullName = reader.GetString(ord);
 
+                    ord = reader.GetOrdinal("runReports");
+                    if (!reader.IsDBNull(ord)) ctx.runReports = reader.GetBoolean(ord);
+
+                    ord = reader.GetOrdinal("scheduleReports");
+                    if (!reader.IsDBNull(ord)) ctx.scheduleReports = reader.GetBoolean(ord);
+
+                    ord = reader.GetOrdinal("manageReports");
+                    if (!reader.IsDBNull(ord)) ctx.manageReports = reader.GetBoolean(ord);
+
+                    ord = reader.GetOrdinal("administrator");
+                    if (!reader.IsDBNull(ord)) ctx.administrator = reader.GetBoolean(ord);
+
                     _logger?.LogInformation("GetUserContextByLoginAsync found userID={UserID} loginID={Login} fullname={Fullname}", ctx.userID, normalized, ctx.fullName);
 
                     return ctx;
@@ -683,6 +707,515 @@ namespace RGBReportingWebsite.Server.Services
                 _logger?.LogWarning("GetUserContextByLoginAsync failed for login='{LoginNormalized}'", normalized);
                 return null;
             }
+        }
+
+        // Administrative: return list of users and their flags
+        public async Task<List<RGBReportingWebsite.Server.Models.UserDetailsDto>> GetAllUsersAsync()
+        {
+            var results = new List<RGBReportingWebsite.Server.Models.UserDetailsDto>();
+
+            const string sql = @"
+                SELECT userID, loginID, fullName, SAPuserID, SAPsalesID, ISNULL(active, 0) AS active,
+                       ISNULL(runReports, 0) AS runReports, ISNULL(scheduleReports, 0) AS scheduleReports,
+                       ISNULL(manageReports, 0) AS manageReports, ISNULL(administrator, 0) AS administrator
+                FROM dbo.reportUsers ORDER BY fullName;";
+
+            try
+            {
+                await using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                await using var command = new SqlCommand(sql, connection);
+                await using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    var dto = new RGBReportingWebsite.Server.Models.UserDetailsDto();
+
+                    int ord;
+                    ord = reader.GetOrdinal("userID");
+                    if (!reader.IsDBNull(ord)) dto.userID = reader.GetInt32(ord);
+
+                    ord = reader.GetOrdinal("loginID");
+                    if (!reader.IsDBNull(ord)) dto.loginID = reader.GetString(ord);
+
+                    ord = reader.GetOrdinal("fullName");
+                    if (!reader.IsDBNull(ord)) dto.fullName = reader.GetString(ord);
+
+                    ord = reader.GetOrdinal("SAPuserID");
+                    if (!reader.IsDBNull(ord)) dto.SAPuserID = reader.GetInt32(ord);
+
+                    ord = reader.GetOrdinal("SAPsalesID");
+                    if (!reader.IsDBNull(ord)) dto.SAPsalesID = reader.GetInt32(ord);
+
+                    ord = reader.GetOrdinal("active");
+                    dto.active = !reader.IsDBNull(ord) && reader.GetBoolean(ord);
+
+                    ord = reader.GetOrdinal("runReports");
+                    dto.runReports = !reader.IsDBNull(ord) && reader.GetBoolean(ord);
+
+                    ord = reader.GetOrdinal("scheduleReports");
+                    dto.scheduleReports = !reader.IsDBNull(ord) && reader.GetBoolean(ord);
+
+                    ord = reader.GetOrdinal("manageReports");
+                    dto.manageReports = !reader.IsDBNull(ord) && reader.GetBoolean(ord);
+
+                    ord = reader.GetOrdinal("administrator");
+                    dto.administrator = !reader.IsDBNull(ord) && reader.GetBoolean(ord);
+
+                    results.Add(dto);
+                }
+
+                return results;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "GetAllUsersAsync failed");
+                throw;
+            }
+        }
+
+        public async Task<bool> UpdateUserFlagsAsync(int userID, bool active, bool runReports, bool scheduleReports, bool manageReports, bool administrator)
+        {
+            const string sql = @"
+                UPDATE dbo.reportUsers
+                SET active = @active,
+                    runReports = @runReports,
+                    scheduleReports = @scheduleReports,
+                    manageReports = @manageReports,
+                    administrator = @administrator
+                WHERE userID = @userID;";
+
+            try
+            {
+                await using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                await using var command = new SqlCommand(sql, connection);
+                command.Parameters.Add("@active", System.Data.SqlDbType.Bit).Value = active;
+                command.Parameters.Add("@runReports", System.Data.SqlDbType.Bit).Value = runReports;
+                command.Parameters.Add("@scheduleReports", System.Data.SqlDbType.Bit).Value = scheduleReports;
+                command.Parameters.Add("@manageReports", System.Data.SqlDbType.Bit).Value = manageReports;
+                command.Parameters.Add("@administrator", System.Data.SqlDbType.Bit).Value = administrator;
+                command.Parameters.Add("@userID", System.Data.SqlDbType.Int).Value = userID;
+
+                var affected = await command.ExecuteNonQueryAsync();
+                return affected > 0;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "UpdateUserFlagsAsync failed for userID={UserID}", userID);
+                return false;
+            }
+        }
+
+        public async Task<List<RGBReportingWebsite.Server.Models.ReportPermissionDto>> GetReportPermissionsAsync(int userID)
+        {
+            const string sql = @"
+                SELECT rd.reportDetailID,
+                       rd.category,
+                       rd.subCategory,
+                       rd.description,
+                       ISNULL(rd.enabled, 0) AS reportEnabled,
+                       ISNULL(rp.enabled, 0) AS permissionEnabled
+                FROM dbo.reportDetails rd
+                LEFT JOIN dbo.reportPermissions rp
+                    ON rp.reportDetailID = rd.reportDetailID
+                    AND rp.userID = @userID
+                ORDER BY rd.category, rd.subCategory, rd.description;";
+
+            var results = new List<RGBReportingWebsite.Server.Models.ReportPermissionDto>();
+
+            try
+            {
+                await using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                await using var command = new SqlCommand(sql, connection);
+                command.Parameters.Add("@userID", System.Data.SqlDbType.Int).Value = userID;
+
+                await using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    results.Add(new RGBReportingWebsite.Server.Models.ReportPermissionDto
+                    {
+                        reportDetailID = reader.GetInt32(reader.GetOrdinal("reportDetailID")),
+                        category = reader.IsDBNull(reader.GetOrdinal("category")) ? null : reader.GetString(reader.GetOrdinal("category")),
+                        subCategory = reader.IsDBNull(reader.GetOrdinal("subCategory")) ? null : reader.GetString(reader.GetOrdinal("subCategory")),
+                        description = reader.IsDBNull(reader.GetOrdinal("description")) ? null : reader.GetString(reader.GetOrdinal("description")),
+                        reportEnabled = reader.GetBoolean(reader.GetOrdinal("reportEnabled")),
+                        permissionEnabled = reader.GetBoolean(reader.GetOrdinal("permissionEnabled"))
+                    });
+                }
+
+                return results;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "GetReportPermissionsAsync failed for userID={UserID}", userID);
+                throw;
+            }
+        }
+
+        public async Task<bool> SetReportPermissionAsync(int userID, int reportDetailID, bool enabled)
+        {
+            if (userID <= 0 || reportDetailID <= 0)
+                return false;
+
+            const string updateSql = @"
+                UPDATE dbo.reportPermissions
+                SET enabled = @enabled
+                WHERE userID = @userID AND reportDetailID = @reportDetailID;";
+
+            const string insertSql = @"
+                INSERT INTO dbo.reportPermissions (userID, reportDetailID, enabled)
+                VALUES (@userID, @reportDetailID, @enabled);";
+
+            try
+            {
+                await using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                await using var transaction = await connection.BeginTransactionAsync();
+                await using var updateCommand = new SqlCommand(updateSql, connection, (SqlTransaction)transaction);
+                updateCommand.Parameters.Add("@enabled", System.Data.SqlDbType.Bit).Value = enabled;
+                updateCommand.Parameters.Add("@userID", System.Data.SqlDbType.Int).Value = userID;
+                updateCommand.Parameters.Add("@reportDetailID", System.Data.SqlDbType.Int).Value = reportDetailID;
+
+                var affected = await updateCommand.ExecuteNonQueryAsync();
+                if (affected == 0)
+                {
+                    await using var insertCommand = new SqlCommand(insertSql, connection, (SqlTransaction)transaction);
+                    insertCommand.Parameters.Add("@enabled", System.Data.SqlDbType.Bit).Value = enabled;
+                    insertCommand.Parameters.Add("@userID", System.Data.SqlDbType.Int).Value = userID;
+                    insertCommand.Parameters.Add("@reportDetailID", System.Data.SqlDbType.Int).Value = reportDetailID;
+                    await insertCommand.ExecuteNonQueryAsync();
+                }
+
+                await transaction.CommitAsync();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "SetReportPermissionAsync failed for userID={UserID}, reportDetailID={ReportDetailID}", userID, reportDetailID);
+                return false;
+            }
+        }
+
+        public async Task<List<ReportScheduleDto>> GetReportSchedulesAsync()
+        {
+            const string sql = @"
+                SELECT scheduledReportID, reportRunOrder, reportGroupingID, reportName,
+                       spreadsheetName, parameter1, parameter1Name, filterCommand,
+                       filterCommandName, enabled
+                FROM dbo.reportSchedule
+                ORDER BY reportRunOrder, reportName, scheduledReportID;";
+
+            var schedules = new List<ReportScheduleDto>();
+            await using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync();
+            await using var command = new SqlCommand(sql, connection);
+            await using var reader = await command.ExecuteReaderAsync();
+
+            while (await reader.ReadAsync())
+            {
+                schedules.Add(new ReportScheduleDto
+                {
+                    scheduledReportID = reader.GetInt32(reader.GetOrdinal("scheduledReportID")),
+                    reportRunOrder = ReadNullableInt(reader, "reportRunOrder"),
+                    reportGroupingID = ReadNullableInt(reader, "reportGroupingID"),
+                    reportName = ReadNullableString(reader, "reportName"),
+                    spreadsheetName = ReadNullableString(reader, "spreadsheetName"),
+                    parameter1 = ReadNullableString(reader, "parameter1"),
+                    parameter1Name = ReadNullableString(reader, "parameter1Name"),
+                    filterCommand = ReadNullableString(reader, "filterCommand"),
+                    filterCommandName = ReadNullableString(reader, "filterCommandName"),
+                    enabled = reader.IsDBNull(reader.GetOrdinal("enabled"))
+                        ? null
+                        : reader.GetBoolean(reader.GetOrdinal("enabled"))
+                });
+            }
+
+            return schedules;
+        }
+
+        public async Task<int?> SaveReportScheduleAsync(ReportScheduleDto schedule)
+        {
+            const string insertSql = @"
+                INSERT INTO dbo.reportSchedule
+                    (reportRunOrder, reportGroupingID, reportName, spreadsheetName,
+                     parameter1, parameter1Name, filterCommand, filterCommandName, enabled)
+                OUTPUT INSERTED.scheduledReportID
+                VALUES
+                    (@reportRunOrder, @reportGroupingID, @reportName, @spreadsheetName,
+                     @parameter1, @parameter1Name, @filterCommand, @filterCommandName, @enabled);";
+            const string updateSql = @"
+                UPDATE dbo.reportSchedule
+                SET reportRunOrder = @reportRunOrder,
+                    reportGroupingID = @reportGroupingID,
+                    reportName = @reportName,
+                    spreadsheetName = @spreadsheetName,
+                    parameter1 = @parameter1,
+                    parameter1Name = @parameter1Name,
+                    filterCommand = @filterCommand,
+                    filterCommandName = @filterCommandName,
+                    enabled = @enabled
+                WHERE scheduledReportID = @scheduledReportID;";
+
+            try
+            {
+                await using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+                await using var command = new SqlCommand(
+                    schedule.scheduledReportID <= 0 ? insertSql : updateSql,
+                    connection);
+                AddReportScheduleParameters(command, schedule);
+
+                if (schedule.scheduledReportID <= 0)
+                {
+                    var result = await command.ExecuteScalarAsync();
+                    return result is null or DBNull ? null : Convert.ToInt32(result);
+                }
+
+                command.Parameters.Add("@scheduledReportID", SqlDbType.Int).Value = schedule.scheduledReportID;
+                return await command.ExecuteNonQueryAsync() > 0 ? schedule.scheduledReportID : null;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "SaveReportScheduleAsync failed for scheduledReportID={ScheduledReportID}", schedule.scheduledReportID);
+                return null;
+            }
+        }
+
+        public async Task<bool> DeleteReportScheduleAsync(int scheduledReportID)
+        {
+            try
+            {
+                await using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+                await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
+
+                await using (var emailsCommand = new SqlCommand(
+                    "DELETE FROM dbo.reportScheduleEmails WHERE scheduledReportID = @scheduledReportID;",
+                    connection,
+                    transaction))
+                {
+                    emailsCommand.Parameters.Add("@scheduledReportID", SqlDbType.Int).Value = scheduledReportID;
+                    await emailsCommand.ExecuteNonQueryAsync();
+                }
+
+                await using var scheduleCommand = new SqlCommand(
+                    "DELETE FROM dbo.reportSchedule WHERE scheduledReportID = @scheduledReportID;",
+                    connection,
+                    transaction);
+                scheduleCommand.Parameters.Add("@scheduledReportID", SqlDbType.Int).Value = scheduledReportID;
+                var affected = await scheduleCommand.ExecuteNonQueryAsync();
+                await transaction.CommitAsync();
+                return affected > 0;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "DeleteReportScheduleAsync failed for scheduledReportID={ScheduledReportID}", scheduledReportID);
+                return false;
+            }
+        }
+
+        public async Task<List<ReportScheduleEmailDto>> GetReportScheduleEmailsAsync(int scheduledReportID)
+        {
+            const string sql = @"
+                SELECT se.reportScheduleEmailID, se.scheduledReportID, se.userID, se.type,
+                       se.frequency, se.runTime, se.active, ru.fullName, ru.loginID
+                FROM dbo.reportScheduleEmails se
+                LEFT JOIN dbo.reportUsers ru ON ru.userID = se.userID
+                WHERE se.scheduledReportID = @scheduledReportID
+                ORDER BY ru.fullName, se.type, se.frequency;";
+
+            var emails = new List<ReportScheduleEmailDto>();
+            await using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync();
+            await using var command = new SqlCommand(sql, connection);
+            command.Parameters.Add("@scheduledReportID", SqlDbType.Int).Value = scheduledReportID;
+            await using var reader = await command.ExecuteReaderAsync();
+
+            while (await reader.ReadAsync())
+            {
+                var runTimeOrdinal = reader.GetOrdinal("runTime");
+                emails.Add(new ReportScheduleEmailDto
+                {
+                    reportScheduleEmailID = reader.GetInt32(reader.GetOrdinal("reportScheduleEmailID")),
+                    scheduledReportID = ReadNullableInt(reader, "scheduledReportID"),
+                    userID = ReadNullableInt(reader, "userID"),
+                    type = ReadNullableString(reader, "type"),
+                    frequency = ReadNullableString(reader, "frequency"),
+                    runTime = reader.IsDBNull(runTimeOrdinal) ? null : reader.GetTimeSpan(runTimeOrdinal),
+                    active = reader.IsDBNull(reader.GetOrdinal("active"))
+                        ? null
+                        : reader.GetBoolean(reader.GetOrdinal("active")),
+                    fullName = ReadNullableString(reader, "fullName"),
+                    loginID = ReadNullableString(reader, "loginID")
+                });
+            }
+
+            return emails;
+        }
+
+        public async Task<int?> SaveReportScheduleEmailAsync(ReportScheduleEmailDto email)
+        {
+            const string insertSql = @"
+                INSERT INTO dbo.reportScheduleEmails
+                    (scheduledReportID, userID, type, frequency, runTime, active)
+                OUTPUT INSERTED.reportScheduleEmailID
+                VALUES (@scheduledReportID, @userID, @type, @frequency, @runTime, @active);";
+            const string updateSql = @"
+                UPDATE dbo.reportScheduleEmails
+                SET scheduledReportID = @scheduledReportID,
+                    userID = @userID,
+                    type = @type,
+                    frequency = @frequency,
+                    runTime = @runTime,
+                    active = @active
+                WHERE reportScheduleEmailID = @reportScheduleEmailID;";
+
+            try
+            {
+                await using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+                await using var command = new SqlCommand(
+                    email.reportScheduleEmailID <= 0 ? insertSql : updateSql,
+                    connection);
+                command.Parameters.Add("@scheduledReportID", SqlDbType.Int).Value = (object?)email.scheduledReportID ?? DBNull.Value;
+                command.Parameters.Add("@userID", SqlDbType.Int).Value = (object?)email.userID ?? DBNull.Value;
+                AddNullableString(command, "@type", email.type, SqlDbType.NVarChar, 3);
+                AddNullableString(command, "@frequency", email.frequency, SqlDbType.NVarChar, 20);
+                command.Parameters.Add("@runTime", SqlDbType.Time).Value = (object?)email.runTime ?? DBNull.Value;
+                command.Parameters.Add("@active", SqlDbType.Bit).Value = (object?)email.active ?? DBNull.Value;
+
+                if (email.reportScheduleEmailID <= 0)
+                {
+                    var result = await command.ExecuteScalarAsync();
+                    return result is null or DBNull ? null : Convert.ToInt32(result);
+                }
+
+                command.Parameters.Add("@reportScheduleEmailID", SqlDbType.Int).Value = email.reportScheduleEmailID;
+                return await command.ExecuteNonQueryAsync() > 0 ? email.reportScheduleEmailID : null;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "SaveReportScheduleEmailAsync failed for reportScheduleEmailID={EmailID}", email.reportScheduleEmailID);
+                return null;
+            }
+        }
+
+        public async Task<bool> DeleteReportScheduleEmailAsync(int scheduledReportID, int reportScheduleEmailID)
+        {
+            try
+            {
+                await using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+                await using var command = new SqlCommand(
+                    "DELETE FROM dbo.reportScheduleEmails WHERE scheduledReportID = @scheduledReportID AND reportScheduleEmailID = @reportScheduleEmailID;",
+                    connection);
+                command.Parameters.Add("@scheduledReportID", SqlDbType.Int).Value = scheduledReportID;
+                command.Parameters.Add("@reportScheduleEmailID", SqlDbType.Int).Value = reportScheduleEmailID;
+                return await command.ExecuteNonQueryAsync() > 0;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "DeleteReportScheduleEmailAsync failed for reportScheduleEmailID={EmailID}", reportScheduleEmailID);
+                return false;
+            }
+        }
+
+        public async Task<List<ReportScheduleHistoryDto>> GetReportScheduleHistoryAsync(int scheduledReportID)
+        {
+            const string sql = @"
+                SELECT reportScheduleHistoryID, reportScheduleHistoryDate, scheduledReportID,
+                       toEmailAddress, ccEmailAddress, BccEmailAddress, successful, errorMessage
+                FROM dbo.reportScheduleHistory
+                WHERE scheduledReportID = @scheduledReportID
+                ORDER BY reportScheduleHistoryDate DESC, reportScheduleHistoryID DESC;";
+
+            var history = new List<ReportScheduleHistoryDto>();
+            await using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync();
+            await using var command = new SqlCommand(sql, connection);
+            command.Parameters.Add("@scheduledReportID", SqlDbType.Int).Value = scheduledReportID;
+            await using var reader = await command.ExecuteReaderAsync();
+
+            while (await reader.ReadAsync())
+            {
+                var dateOrdinal = reader.GetOrdinal("reportScheduleHistoryDate");
+                var successfulOrdinal = reader.GetOrdinal("successful");
+                history.Add(new ReportScheduleHistoryDto
+                {
+                    reportScheduleHistoryID = reader.GetInt32(reader.GetOrdinal("reportScheduleHistoryID")),
+                    reportScheduleHistoryDate = reader.IsDBNull(dateOrdinal) ? null : reader.GetDateTime(dateOrdinal),
+                    scheduledReportID = ReadNullableInt(reader, "scheduledReportID"),
+                    toEmailAddress = ReadNullableString(reader, "toEmailAddress"),
+                    ccEmailAddress = ReadNullableString(reader, "ccEmailAddress"),
+                    BccEmailAddress = ReadNullableString(reader, "BccEmailAddress"),
+                    successful = reader.IsDBNull(successfulOrdinal) ? null : reader.GetBoolean(successfulOrdinal),
+                    errorMessage = ReadNullableString(reader, "errorMessage")
+                });
+            }
+
+            return history;
+        }
+
+        public async Task<List<string>> GetActiveReportFrequenciesAsync()
+        {
+            const string sql = @"
+                SELECT DISTINCT frequency
+                FROM dbo.reportFrequencies
+                WHERE active = 1 AND frequency IS NOT NULL
+                ORDER BY frequency;";
+
+            var frequencies = new List<string>();
+            try
+            {
+                await using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+                await using var command = new SqlCommand(sql, connection);
+                await using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                    frequencies.Add(reader.GetString(0));
+
+                return frequencies;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "GetActiveReportFrequenciesAsync failed");
+                throw;
+            }
+        }
+
+        private static void AddReportScheduleParameters(SqlCommand command, ReportScheduleDto schedule)
+        {
+            command.Parameters.Add("@reportRunOrder", SqlDbType.Int).Value = (object?)schedule.reportRunOrder ?? DBNull.Value;
+            command.Parameters.Add("@reportGroupingID", SqlDbType.Int).Value = (object?)schedule.reportGroupingID ?? DBNull.Value;
+            AddNullableString(command, "@reportName", schedule.reportName, SqlDbType.VarChar, 70);
+            AddNullableString(command, "@spreadsheetName", schedule.spreadsheetName, SqlDbType.VarChar, 70);
+            AddNullableString(command, "@parameter1", schedule.parameter1, SqlDbType.VarChar, 50);
+            AddNullableString(command, "@parameter1Name", schedule.parameter1Name, SqlDbType.VarChar, 50);
+            AddNullableString(command, "@filterCommand", schedule.filterCommand, SqlDbType.VarChar, 255);
+            AddNullableString(command, "@filterCommandName", schedule.filterCommandName, SqlDbType.VarChar, 50);
+            command.Parameters.Add("@enabled", SqlDbType.Bit).Value = (object?)schedule.enabled ?? DBNull.Value;
+        }
+
+        private static void AddNullableString(SqlCommand command, string name, string? value, SqlDbType type, int size)
+        {
+            command.Parameters.Add(name, type, size).Value = (object?)value ?? DBNull.Value;
+        }
+
+        private static int? ReadNullableInt(SqlDataReader reader, string name)
+        {
+            var ordinal = reader.GetOrdinal(name);
+            return reader.IsDBNull(ordinal) ? null : reader.GetInt32(ordinal);
+        }
+
+        private static string? ReadNullableString(SqlDataReader reader, string name)
+        {
+            var ordinal = reader.GetOrdinal(name);
+            return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
         }
     }
 }

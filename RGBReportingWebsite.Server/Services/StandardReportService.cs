@@ -976,134 +976,102 @@ namespace RGBReportingWebsite.Server.Services
             switch (formatName.Trim())
             {
                 case "Text":
-
-                    format.Format =
-                        "@";
-
-                    break;
-
+                    format.Format = "@";
+                break;
 
                 case "Date":
-
-                    format.Format =
-                        "dd/mm/yyyy";
-
-                    break;
-
+                    format.Format = "dd/mm/yyyy";
+                break;
 
                 case "DateTime":
-
-                    format.Format =
-                        "dd/mm/yyyy hh:mm:ss";
-
-                    break;
-
+                    format.Format = "dd/mm/yyyy hh:mm:ss";
+                break;
 
                 case "C0":
-                case "E0":
-
-                    format.Format =
-                        currencySymbol +
-                        "#,##0";
-
-                    break;
-
+                    format.Format = currencySymbol + "#,##0";
+                break;
 
                 case "C2":
+                    format.Format = currencySymbol + "#,##0.00";
+                break;
+
+                case "E0":
+                    format.Format = "€#,##0";
+                break;
+
+                case "U0":
+                    format.Format = "$#,##0";
+                break;
+
+               
                 case "E2":
+                    format.Format = "€#,##0.00";
+                break;
 
-                    format.Format =
-                        currencySymbol +
-                        "#,##0.00";
-
-                    break;
-
+                case "U2":
+                    format.Format = "$#,##0.00";
+                break;
 
                 case "C4":
+                    format.Format = currencySymbol + "#,##0.0000";
+                break;
+
                 case "E4":
+                    format.Format = "€#,##0.0000";
+                break;
 
-                    format.Format =
-                        currencySymbol +
-                        "#,##0.0000";
-
-                    break;
-
+                case "U4":
+                    format.Format = "$#,##0.0000";
+                break;
 
                 case "C2R":
+                    format.Format = currencySymbol + "#,##0.00;[Red]-" + currencySymbol + "#,##0.00";
+                break;
+                
                 case "E2R":
+                    format.Format = "€#,##0.00;[Red]-€#,##0.00";
+                break;
 
-                    format.Format =
-                        currencySymbol +
-                        "#,##0.00;[Red]-" +
-                        currencySymbol +
-                        "#,##0.00";
-
-                    break;
-
+                case "U2R":
+                    format.Format = "$#,##0.00;[Red]-$#,##0.00";
+                break;
 
                 case "N0":
-
-                    format.Format =
-                        "#,##0";
-
-                    break;
-
+                    format.Format = "#,##0";
+                break;
 
                 case "N1":
-
-                    format.Format =
-                        "#,##0.0";
-
-                    break;
-
+                    format.Format = "#,##0.0";
+                break;
 
                 case "N2":
-
-                    format.Format =
-                        "#,##0.00";
-
-                    break;
-
+                    format.Format = "#,##0.00";
+                break;
 
                 case "N4":
-
-                    format.Format =
-                        "#,##0.0000";
-
-                    break;
-
+                    format.Format = "#,##0.0000";
+                break;
 
                 case "P2":
-
-                    format.Format =
-                        "0.00%";
-
-                    break;
-
+                    format.Format = "0.00%";
+                break;
 
                 case "P2R":
-
-                    format.Format =
-                        "0.00%;[Red]-0.00%";
-
-                    break;
-
+                    format.Format = "0.00%;[Red]-0.00%";
+                break;
 
                 case "Time":
+                    format.Format = "[hh\\]:mm";
+                break;
+
                 case "T2":
-
-                    format.Format =
-                        "[hh\\]:mm";
-
-                    break;
+                    format.Format = "[hh\\]:mm";
+                break;
 
 
                 case "T3":
-
-                    format.Format =
-                        "[hh\\]:mm:ss";
-
-                    break;
+                    format.Format = "[hh\\]:mm:ss";
+                break;
             }
         }
 

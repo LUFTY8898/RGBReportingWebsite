@@ -1,0 +1,314 @@
+@page "/reportPermissionAdministration"
+@attribute [Authorize]
+
+@using RGBReportingWebsite.Models
+@inject HttpClient Http
+@inject PagePermissionService PagePermissions
+
+<PageTitle>Report Permissions</PageTitle>
+
+@if (!_accessChecked)
+{
+    <p>Checking permissions...</p>
+}
+else if (!_isAdministrator)
+{
+    <p role="alert">You are not authorized to access report administration.</p>
+}
+else
+{
+<div class="permission-admin-page">
+    <header class="page-header">
+        <div>
+            <p class="eyebrow">ADMINISTRATION</p>
+            <h1>Report permissions</h1>
+            <p class="page-description">Choose which reports an individual user can access.</p>
+        </div>
+        <a class="back-link" href="/administration">Back to administration</a>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="alert alert-danger" role="alert">@_error</div>
+    }
+
+    <section class="permission-panel">
+        <div class="user-picker">
+            <label for="permissionUser">Select a user</label>
+            <select id="permissionUser" class="form-select" value="@_selectedUserID" @onchange="OnUserChangedAsync" disabled="@_loadingUsers">
+                <option value="">Choose a user...</option>
+                @foreach (var user in _users)
+                {
+                    <option value="@user.userID">@user.fullName (@user.loginID)</option>
+                }
+            </select>
+        </div>
+
+        @if (_loadingUsers)
+        {
+            <div class="loading-state"><span class="spinner-border spinner-border-sm" role="status"></span> Loading users...</div>
+        }
+        else if (_selectedUserID is null)
+        {
+            <div class="empty-state">
+                <span class="bi bi-person-lock" aria-hidden="true"></span>
+                <h2>Select a user to manage permissions</h2>
+                <p>Report access is managed separately for each user.</p>
+            </div>
+        }
+        else if (_loadingReports)
+        {
+            <div class="loading-state"><span class="spinner-border spinner-border-sm" role="status"></span> Loading report permissions...</div>
+        }
+        else
+        {
+            <div class="report-toolbar">
+                <div class="summary-text"><strong>@_reports.Count(report => report.permissionEnabled)</strong> of @_reports.Count reports enabled</div>
+                <label class="search-box">
+                    <span class="bi bi-search" aria-hidden="true"></span>
+                    <input type="search" @bind="_searchTerm" @bind:event="oninput" placeholder="Search reports" aria-label="Search reports" />
+                </label>
+            </div>
+
+            @if (FilteredReports.Count == 0)
+            {
+                <div class="empty-list">No reports match your search.</div>
+            }
+            else
+            {
+                <div class="report-list">
+                    @foreach (var report in FilteredReports)
+                    {
+                        <article class="report-row" @key="report.reportDetailID">
+                            <div class="report-copy">
+                                <div class="report-title-row">
+                                    <h2>@(string.IsNullOrWhiteSpace(report.description) ? $"Report {report.reportDetailID}" : report.description)</h2>
+                                    @if (!report.reportEnabled)
+                                    {
+                                        <span class="report-status">Report disabled</span>
+                                    }
+                                </div>
+                                <p>
+                                    @if (!string.IsNullOrWhiteSpace(report.category))
+                                    {
+                                        @report.category
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(report.subCategory))
+                                    {
+                                        <span> / @report.subCategory</span>
+                                    }
+                                    <span class="report-id"> · ID @report.reportDetailID</span>
+                                </p>
+                            </div>
+                            <div class="permission-control">
+                                <span class="permission-label">@(report.permissionEnabled ? "Allowed" : "Not allowed")</span>
+                                <input class="form-check-input permission-toggle" type="checkbox" role="switch"
+                                       checked="@report.permissionEnabled"
+                                       disabled="@_savingReports.Contains(report.reportDetailID)"
+                                       aria-label="Allow @report.description for selected user"
+                                       @onchange="args => UpdatePermissionAsync(report, args)" />
+                                @if (_permissionMessages.TryGetValue(report.reportDetailID, out var message))
+                                {
+                                    <span class="save-message @(message == "Saved" ? "success" : "failure")">@message</span>
+                                }
+                            </div>
+                        </article>
+                    }
+                </div>
+            }
+        }
+    </section>
+</div>
+}
+
+@code {
+    private List<UserDetails> _users = new();
+    private List<ReportPermission> _reports = new();
+    private readonly HashSet<int> _savingReports = new();
+    private readonly Dictionary<int, string> _permissionMessages = new();
+    private int? _selectedUserID;
+    private bool _loadingUsers = true;
+    private bool _loadingReports;
+    private bool _accessChecked;
+    private bool _isAdministrator;
+    private string? _error;
+    private string _searchTerm = string.Empty;
+
+    private List<ReportPermission> FilteredReports => string.IsNullOrWhiteSpace(_searchTerm)
+        ? _reports
+        : _reports.Where(report =>
+            (report.description?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (report.category?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (report.subCategory?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false))
+            .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isAdministrator = await PagePermissions.IsAdministratorAsync();
+        _accessChecked = true;
+        if (!_isAdministrator)
+        {
+            _loadingUsers = false;
+            return;
+        }
+
+        try
+        {
+            using var response = await Http.GetAsync("api/Admin/users");
+            if (!response.IsSuccessStatusCode)
+                throw new InvalidOperationException($"Unable to load users ({(int)response.StatusCode}).");
+
+            var users = await response.Content.ReadFromJsonAsync<List<UserDetails>>() ?? new List<UserDetails>();
+            _users = users
+                .Where(user => user.active && user.runReports)
+                .OrderBy(user => user.fullName ?? string.Empty, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loadingUsers = false;
+        }
+    }
+
+    private async Task OnUserChangedAsync(ChangeEventArgs args)
+    {
+        if (!int.TryParse(args.Value?.ToString(), out var userID))
+        {
+            _selectedUserID = null;
+            _reports.Clear();
+            return;
+        }
+
+        _selectedUserID = userID;
+        _searchTerm = string.Empty;
+        _permissionMessages.Clear();
+        _loadingReports = true;
+        _error = null;
+
+        try
+        {
+            using var response = await Http.GetAsync($"api/Admin/users/{userID}/reportPermissions");
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                throw new InvalidOperationException($"Unable to load report permissions ({(int)response.StatusCode}): {body}");
+            }
+
+            var reports = await response.Content.ReadFromJsonAsync<List<ReportPermission>>() ?? new List<ReportPermission>();
+            _reports = reports
+                .OrderBy(report => string.IsNullOrWhiteSpace(report.description)
+                    ? $"Report {report.reportDetailID}"
+                    : report.description,
+                    StringComparer.CurrentCultureIgnoreCase)
+                .ThenBy(report => report.reportDetailID)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _reports.Clear();
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loadingReports = false;
+        }
+    }
+
+    private async Task UpdatePermissionAsync(ReportPermission report, ChangeEventArgs args)
+    {
+        if (_selectedUserID is not int userID || args.Value is not bool enabled)
+            return;
+
+        var previousValue = report.permissionEnabled;
+        report.permissionEnabled = enabled;
+        _savingReports.Add(report.reportDetailID);
+        _permissionMessages.Remove(report.reportDetailID);
+        _error = null;
+
+        try
+        {
+            using var response = await Http.PutAsJsonAsync(
+                $"api/Admin/users/{userID}/reportPermissions/{report.reportDetailID}", enabled);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                report.permissionEnabled = previousValue;
+                _permissionMessages[report.reportDetailID] = "Save failed";
+                _error = string.IsNullOrWhiteSpace(body)
+                    ? $"Unable to save permission ({(int)response.StatusCode})."
+                    : body;
+                return;
+            }
+
+            _permissionMessages[report.reportDetailID] = "Saved";
+        }
+        catch (Exception ex)
+        {
+            report.permissionEnabled = previousValue;
+            _permissionMessages[report.reportDetailID] = "Save failed";
+            _error = ex.Message;
+        }
+        finally
+        {
+            _savingReports.Remove(report.reportDetailID);
+        }
+    }
+}
+
+<style>
+    .permission-admin-page {
+        --admin-ink: #172b4d;
+        --admin-muted: #6b778c;
+        --admin-line: #e7ecf3;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem clamp(1rem, 3vw, 2.5rem);
+        color: var(--admin-ink);
+    }
+
+    .page-header, .report-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+    .page-header { margin-bottom: 1.5rem; }
+    .eyebrow { margin: 0 0 .35rem; color: #3867d6; font-size: .75rem; font-weight: 700; letter-spacing: .12em; }
+    .page-header h1 { margin: 0; font-size: clamp(1.8rem, 3vw, 2.4rem); font-weight: 700; }
+    .page-description { margin: .45rem 0 0; color: var(--admin-muted); }
+    .back-link { color: #3867d6; font-weight: 600; text-decoration: none; white-space: nowrap; }
+    .back-link:hover { text-decoration: underline; }
+    .permission-panel { overflow: hidden; background: #fff; border: 1px solid var(--admin-line); border-radius: .9rem; box-shadow: 0 8px 28px rgba(23, 43, 77, .06); }
+    .user-picker { max-width: 480px; padding: 1.4rem 1.5rem; }
+    .user-picker label { display: block; margin-bottom: .45rem; font-size: .86rem; font-weight: 700; }
+    .report-toolbar { padding: 1rem 1.5rem; border-top: 1px solid var(--admin-line); border-bottom: 1px solid var(--admin-line); background: #f7f9fc; }
+    .summary-text { color: var(--admin-muted); font-size: .9rem; }
+    .summary-text strong { color: var(--admin-ink); }
+    .search-box { display: flex; align-items: center; gap: .6rem; width: min(100%, 310px); padding: .55rem .8rem; border: 1px solid #dfe5ee; border-radius: .6rem; background: #fff; color: var(--admin-muted); }
+    .search-box input { width: 100%; border: 0; outline: 0; color: var(--admin-ink); }
+    .report-row { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; padding: 1rem 1.5rem; border-bottom: 1px solid var(--admin-line); }
+    .report-row:last-child { border-bottom: 0; }
+    .report-copy { min-width: 0; }
+    .report-title-row { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem; }
+    .report-copy h2 { margin: 0; font-size: .98rem; font-weight: 650; }
+    .report-copy p { margin: .35rem 0 0; color: var(--admin-muted); font-size: .82rem; }
+    .report-id { color: #8993a4; }
+    .report-status { padding: .2rem .5rem; border-radius: 999px; background: #fff2e5; color: #974f00; font-size: .7rem; font-weight: 700; }
+    .permission-control { display: flex; align-items: center; justify-content: flex-end; gap: .7rem; min-width: 150px; }
+    .permission-label { color: var(--admin-muted); font-size: .8rem; }
+    .permission-toggle { width: 2.4rem; height: 1.2rem; margin: 0; cursor: pointer; }
+    .save-message { font-size: .72rem; }
+    .save-message.success { color: #17804a; }
+    .save-message.failure { color: #c9372c; }
+    .loading-state, .empty-state, .empty-list { padding: 2rem; color: var(--admin-muted); text-align: center; }
+    .empty-state .bi { color: #3867d6; font-size: 2rem; }
+    .empty-state h2 { margin: .7rem 0 .25rem; color: var(--admin-ink); font-size: 1.05rem; }
+    .empty-state p { margin: 0; }
+
+    @@media (max-width: 650px) {
+        .page-header, .report-toolbar { align-items: flex-start; flex-direction: column; }
+        .search-box { width: 100%; }
+        .report-row { align-items: flex-start; flex-direction: column; gap: .8rem; }
+        .permission-control { justify-content: flex-start; }
+    }
+</style>

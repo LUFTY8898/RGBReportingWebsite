@@ -1,0 +1,92 @@
+@page "/administration"
+@attribute [Authorize]
+
+@inject NavigationManager Navigation
+@inject PagePermissionService PagePermissions
+
+<PageTitle>Administration</PageTitle>
+
+@if (!_accessChecked)
+{
+    <p>Checking permissions...</p>
+}
+else if (!_isAdministrator)
+{
+    <p role="alert">You are not authorized to access administration.</p>
+}
+else
+{
+<div class="admin-home">
+    <div class="admin-heading">
+        <div>
+            <p class="admin-eyebrow">RGB REPORTING</p>
+            <h1>Administration</h1>
+            <p>Manage application settings and access controls.</p>
+        </div>
+    </div>
+
+    <section class="admin-card">
+        <div class="admin-card-icon"><span class="bi bi-people-fill" aria-hidden="true"></span></div>
+        <div class="admin-card-copy">
+            <h2>User administration</h2>
+            <p>Manage user accounts, active status, and report permissions.</p>
+        </div>
+        <button class="btn btn-primary" @onclick="GoToUserAdministration">
+            Manage users <span class="bi bi-arrow-right" aria-hidden="true"></span>
+        </button>
+    </section>
+
+    <section class="admin-card">
+        <div class="admin-card-icon permissions-icon"><span class="bi bi-shield-check" aria-hidden="true"></span></div>
+        <div class="admin-card-copy">
+            <h2>Report permissions</h2>
+            <p>Choose which reports each user is allowed to access.</p>
+        </div>
+        <button class="btn btn-primary" @onclick="GoToReportPermissions">
+            Manage permissions <span class="bi bi-arrow-right" aria-hidden="true"></span>
+        </button>
+    </section>
+
+    <section class="admin-card">
+        <div class="admin-card-icon"><span class="bi bi-calendar2-week" aria-hidden="true"></span></div>
+        <div class="admin-card-copy">
+            <h2>Report schedules</h2>
+            <p>Manage scheduled reports, recipients, and email frequency.</p>
+        </div>
+        <button class="btn btn-primary" @onclick="GoToReportSchedules">
+            Manage schedules <span class="bi bi-arrow-right" aria-hidden="true"></span>
+        </button>
+    </section>
+</div>
+}
+
+@code {
+    private bool _accessChecked;
+    private bool _isAdministrator;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isAdministrator = await PagePermissions.IsAdministratorAsync();
+        _accessChecked = true;
+    }
+
+    private void GoToUserAdministration() => Navigation.NavigateTo("/userAdministration");
+    private void GoToReportPermissions() => Navigation.NavigateTo("/reportPermissionAdministration");
+    private void GoToReportSchedules() => Navigation.NavigateTo("/reportScheduleAdministration");
+}
+
+<style>
+    .admin-home { max-width: 1100px; margin: 0 auto; padding: 2.5rem clamp(1rem, 4vw, 3rem); color: #172b4d; }
+    .admin-heading { margin-bottom: 2rem; }
+    .admin-eyebrow { margin: 0 0 .35rem; color: #3867d6; font-size: .75rem; font-weight: 700; letter-spacing: .12em; }
+    .admin-heading h1 { margin: 0; font-size: clamp(1.8rem, 3vw, 2.4rem); font-weight: 700; }
+    .admin-heading p:last-child { margin: .45rem 0 0; color: #6b778c; }
+    .admin-card { display: flex; align-items: center; gap: 1.25rem; margin-bottom: 1rem; padding: 1.5rem; background: #fff; border: 1px solid #e7ecf3; border-radius: .9rem; box-shadow: 0 8px 28px rgba(23, 43, 77, .06); }
+    .admin-card-icon { display: grid; width: 3.25rem; height: 3.25rem; place-items: center; flex: 0 0 3.25rem; border-radius: .85rem; background: #eaf0ff; color: #3867d6; font-size: 1.35rem; }
+    .permissions-icon { background: #e7f7ef; color: #17804a; }
+    .admin-card-copy { flex: 1; }
+    .admin-card-copy h2 { margin: 0; font-size: 1.15rem; font-weight: 700; }
+    .admin-card-copy p { margin: .4rem 0 0; color: #6b778c; }
+    .admin-card .btn { white-space: nowrap; }
+    @@media (max-width: 600px) { .admin-card { align-items: flex-start; flex-direction: column; } }
+</style>

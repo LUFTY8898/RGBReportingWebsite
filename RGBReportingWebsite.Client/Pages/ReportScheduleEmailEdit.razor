@@ -1,0 +1,226 @@
+@page "/reportScheduleAdministration/{scheduleID:int}/recipients/new"
+@page "/reportScheduleAdministration/{scheduleID:int}/recipients/{emailID:int}/edit"
+@attribute [Authorize]
+
+@using RGBReportingWebsite.Models
+@inject HttpClient Http
+@inject PagePermissionService PagePermissions
+@inject NavigationManager Navigation
+
+<PageTitle>@(_isNew ? "Add Recipient" : "Edit Recipient")</PageTitle>
+
+@if (!_accessChecked)
+{
+    <p>Checking permissions...</p>
+}
+else if (!_isAdministrator)
+{
+    <p role="alert">You are not authorized to manage report schedules.</p>
+}
+else if (_loading)
+{
+    <p>Loading recipient...</p>
+}
+else
+{
+    <main class="recipient-edit">
+        <header>
+            <p class="eyebrow">REPORT SCHEDULE</p>
+            <h1>@(_isNew ? "Add recipient" : "Edit recipient")</h1>
+            <p>Schedule: @_schedule?.reportName</p>
+        </header>
+
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <div class="alert alert-danger" role="alert">@_error</div>
+        }
+
+        <section class="panel">
+            <div class="form-grid">
+                <label>User
+                    <select class="form-select" @bind="_form.userID">
+                        <option value="">Select an active report user...</option>
+                        @foreach (var user in _users)
+                        {
+                            <option value="@user.userID">@user.fullName (@user.loginID)</option>
+                        }
+                    </select>
+                </label>
+                <label>Recipient type
+                    <select class="form-select" @bind="_form.type">
+                        <option value="To">To</option><option value="cc">cc</option><option value="Bcc">Bcc</option>
+                    </select>
+                </label>
+                <label>Frequency
+                    <select class="form-select" @bind="_form.frequency">
+                        <option value="" disabled hidden>Select a frequency...</option>
+                        @foreach (var frequency in _frequencies)
+                        {
+                            <option value="@frequency">@frequency</option>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_form.frequency) &&
+                            !_frequencies.Contains(_form.frequency, StringComparer.OrdinalIgnoreCase))
+                        {
+                            <option value="@_form.frequency">@_form.frequency (inactive)</option>
+                        }
+                    </select>
+                </label>
+                <label>Run time<input class="form-control" type="time" @bind="_form.runTime" /></label>
+                <label class="check-label"><input type="checkbox" class="form-check-input" @bind="_form.active" /> Active</label>
+            </div>
+            <div class="form-actions">
+                <button class="btn btn-primary" disabled="@_saving" @onclick="SaveAsync">@(_saving ? "Saving..." : "Save recipient")</button>
+                <a class="btn btn-outline-secondary" href="@RecipientListUrl">Cancel</a>
+            </div>
+        </section>
+    </main>
+}
+
+@code {
+    [Parameter] public int scheduleID { get; set; }
+    [Parameter] public int emailID { get; set; }
+
+    private RecipientForm _form = new();
+    private ReportSchedule? _schedule;
+    private List<UserDetails> _users = new();
+    private List<string> _frequencies = new();
+    private bool _accessChecked;
+    private bool _isAdministrator;
+    private bool _loading = true;
+    private bool _saving;
+    private string? _error;
+    private bool _isNew => emailID <= 0;
+    private string RecipientListUrl => $"/reportScheduleAdministration/{scheduleID}/recipients";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isAdministrator = await PagePermissions.IsAdministratorAsync();
+        _accessChecked = true;
+        if (!_isAdministrator)
+        {
+            _loading = false;
+            return;
+        }
+
+        try
+        {
+            var schedulesTask = Http.GetFromJsonAsync<List<ReportSchedule>>("api/Admin/reportSchedules");
+            var usersTask = Http.GetFromJsonAsync<List<UserDetails>>("api/Admin/users");
+            var frequenciesTask = Http.GetFromJsonAsync<List<string>>("api/Admin/reportFrequencies");
+            var emailsTask = _isNew
+                ? Task.FromResult<List<ReportScheduleEmail>?>(new())
+                : Http.GetFromJsonAsync<List<ReportScheduleEmail>>($"api/Admin/reportSchedules/{scheduleID}/emails");
+            await Task.WhenAll(schedulesTask, usersTask, frequenciesTask, emailsTask);
+
+            _schedule = (await schedulesTask)?.FirstOrDefault(item => item.scheduledReportID == scheduleID);
+            _users = (await usersTask ?? new()).Where(user => user.active && user.runReports)
+                .OrderBy(user => user.fullName ?? string.Empty, StringComparer.CurrentCultureIgnoreCase).ToList();
+            _frequencies = await frequenciesTask ?? new();
+            if (_schedule is null)
+            {
+                _error = "The requested schedule was not found.";
+                return;
+            }
+
+            if (!_isNew)
+            {
+                var email = (await emailsTask)?.FirstOrDefault(item => item.reportScheduleEmailID == emailID);
+                if (email is null)
+                {
+                    _error = "The requested recipient was not found.";
+                    return;
+                }
+
+                _form = RecipientForm.From(email);
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Unable to load recipient details: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_form.userID is not > 0)
+        {
+            _error = "Select a user for this recipient.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_form.frequency))
+        {
+            _error = "Frequency is required.";
+            return;
+        }
+
+        _saving = true;
+        _error = null;
+        try
+        {
+            var payload = _form.ToDto(scheduleID, emailID);
+            using var response = _isNew
+                ? await Http.PostAsJsonAsync($"api/Admin/reportSchedules/{scheduleID}/emails", payload)
+                : await Http.PutAsJsonAsync($"api/Admin/reportSchedules/{scheduleID}/emails/{emailID}", payload);
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(body)
+                    ? $"Save failed ({(int)response.StatusCode})."
+                    : $"Save failed ({(int)response.StatusCode}): {body}");
+            }
+
+            Navigation.NavigateTo(RecipientListUrl);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private sealed class RecipientForm
+    {
+        public int? userID { get; set; }
+        public string type { get; set; } = "To";
+        public string? frequency { get; set; }
+        public TimeOnly? runTime { get; set; }
+        public bool active { get; set; } = true;
+
+        public ReportScheduleEmail ToDto(int parentScheduleID, int recipientID) => new()
+        {
+            reportScheduleEmailID = recipientID,
+            scheduledReportID = parentScheduleID,
+            userID = userID,
+            type = type,
+            frequency = frequency,
+            runTime = runTime?.ToTimeSpan(),
+            active = active
+        };
+
+        public static RecipientForm From(ReportScheduleEmail email) => new()
+        {
+            userID = email.userID,
+            type = string.IsNullOrWhiteSpace(email.type) ? "To" : email.type,
+            frequency = email.frequency,
+            runTime = email.runTime is TimeSpan time ? TimeOnly.FromTimeSpan(time) : null,
+            active = email.active == true
+        };
+    }
+}
+
+<style>
+    .recipient-edit { max-width: 900px; margin: 0 auto; padding: 2rem clamp(1rem, 3vw, 2.5rem); }
+    .eyebrow { color: #3867d6; font-size: .75rem; font-weight: 700; letter-spacing: .12em; }
+    .panel { padding: 1.25rem; border: 1px solid #e3e8ef; border-radius: .8rem; background: #fff; }
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+    .form-grid label { display: flex; flex-direction: column; gap: .35rem; font-weight: 600; }
+    .form-grid .check-label { flex-direction: row; align-items: center; align-self: end; }
+    .form-actions { display: flex; gap: .6rem; margin-top: 1rem; }
+</style>

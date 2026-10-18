@@ -1,0 +1,155 @@
+@page "/reportScheduleAdministration/{scheduleID:int}/delete"
+@page "/reportScheduleAdministration/{scheduleID:int}/recipients/{emailID:int}/delete"
+@attribute [Authorize]
+
+@using RGBReportingWebsite.Models
+@inject HttpClient Http
+@inject PagePermissionService PagePermissions
+@inject NavigationManager Navigation
+
+<PageTitle>Confirm Delete</PageTitle>
+
+@if (!_accessChecked)
+{
+    <p>Checking permissions...</p>
+}
+else if (!_isAdministrator)
+{
+    <p role="alert">You are not authorized to manage report schedules.</p>
+}
+else if (_loading)
+{
+    <p>Loading item...</p>
+}
+else
+{
+    <main class="delete-page">
+        <header>
+            <p class="eyebrow">ADMINISTRATION</p>
+            <h1>Confirm deletion</h1>
+        </header>
+
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <div class="alert alert-danger" role="alert">@_error</div>
+        }
+
+        <section class="panel warning-panel">
+            @if (_isScheduleDelete)
+            {
+                <h2>Delete schedule “@_schedule?.reportName”?</h2>
+                <p>This permanently deletes the schedule and its configured recipients. Recorded run history is not deleted.</p>
+            }
+            else
+            {
+                <h2>Delete this recipient?</h2>
+                <p>@_recipient?.fullName (@_recipient?.loginID) — @_recipient?.type, @_recipient?.frequency</p>
+                <p>This permanently removes the recipient from “@_schedule?.reportName”.</p>
+            }
+
+            <div class="form-actions">
+                <button class="btn btn-danger" disabled="@_deleting" @onclick="ConfirmDeleteAsync">@(_deleting ? "Deleting..." : "Delete permanently")</button>
+                <a class="btn btn-outline-secondary" href="@CancelUrl">Cancel</a>
+            </div>
+        </section>
+    </main>
+}
+
+@code {
+    [Parameter] public int scheduleID { get; set; }
+    [Parameter] public int emailID { get; set; }
+
+    private ReportSchedule? _schedule;
+    private ReportScheduleEmail? _recipient;
+    private bool _accessChecked;
+    private bool _isAdministrator;
+    private bool _loading = true;
+    private bool _deleting;
+    private string? _error;
+    private bool _isScheduleDelete => emailID <= 0;
+    private string CancelUrl => _isScheduleDelete
+        ? "/reportScheduleAdministration"
+        : $"/reportScheduleAdministration/{scheduleID}/recipients";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isAdministrator = await PagePermissions.IsAdministratorAsync();
+        _accessChecked = true;
+        if (!_isAdministrator)
+        {
+            _loading = false;
+            return;
+        }
+
+        try
+        {
+            var schedulesTask = Http.GetFromJsonAsync<List<ReportSchedule>>("api/Admin/reportSchedules");
+            var emailsTask = _isScheduleDelete
+                ? Task.FromResult<List<ReportScheduleEmail>?>(new())
+                : Http.GetFromJsonAsync<List<ReportScheduleEmail>>($"api/Admin/reportSchedules/{scheduleID}/emails");
+            await Task.WhenAll(schedulesTask, emailsTask);
+
+            _schedule = (await schedulesTask)?.FirstOrDefault(item => item.scheduledReportID == scheduleID);
+            if (_schedule is null)
+            {
+                _error = "The requested schedule was not found.";
+                return;
+            }
+
+            if (!_isScheduleDelete)
+            {
+                _recipient = (await emailsTask)?.FirstOrDefault(item => item.reportScheduleEmailID == emailID);
+                if (_recipient is null)
+                    _error = "The requested recipient was not found.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Unable to load the item: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ConfirmDeleteAsync()
+    {
+        if (_schedule is null || (!_isScheduleDelete && _recipient is null))
+            return;
+
+        _deleting = true;
+        _error = null;
+        try
+        {
+            using var response = _isScheduleDelete
+                ? await Http.DeleteAsync($"api/Admin/reportSchedules/{scheduleID}")
+                : await Http.DeleteAsync($"api/Admin/reportSchedules/{scheduleID}/emails/{emailID}");
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(body)
+                    ? $"Delete failed ({(int)response.StatusCode})."
+                    : $"Delete failed ({(int)response.StatusCode}): {body}");
+            }
+
+            Navigation.NavigateTo(CancelUrl);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _deleting = false;
+        }
+    }
+}
+
+<style>
+    .delete-page { max-width: 800px; margin: 0 auto; padding: 2rem clamp(1rem, 3vw, 2.5rem); }
+    .eyebrow { color: #3867d6; font-size: .75rem; font-weight: 700; letter-spacing: .12em; }
+    .panel { padding: 1.5rem; border: 1px solid #f0c8c8; border-radius: .8rem; background: #fff; }
+    .warning-panel { border-left: 5px solid #dc3545; }
+    .form-actions { display: flex; gap: .6rem; margin-top: 1rem; }
+</style>

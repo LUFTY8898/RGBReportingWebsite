@@ -1,7 +1,31 @@
 @page "/scheduleReports"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 
+@inject PagePermissionService PagePermissions
+
 <PageTitle>Schedule Reports</PageTitle>
 
-<h1>Schedule Reports</h1>
-<p>Report scheduling is not available yet.</p>
+@if (!_accessChecked)
+{
+    <p>Checking permissions...</p>
+}
+else if (!_canScheduleReports)
+{
+    <p role="alert">You are not authorized to access scheduled reports.</p>
+}
+else
+{
+    <h1>Schedule Reports</h1>
+    <p>Report scheduling is not available yet.</p>
+}
+
+@code {
+    private bool _accessChecked;
+    private bool _canScheduleReports;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _canScheduleReports = await PagePermissions.CanScheduleReportsAsync();
+        _accessChecked = true;
+    }
+}

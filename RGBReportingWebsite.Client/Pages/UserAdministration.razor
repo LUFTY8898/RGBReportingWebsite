@@ -1,0 +1,270 @@
+@page "/userAdministration"
+@attribute [Authorize]
+
+@using RGBReportingWebsite.Models
+@inject HttpClient Http
+@inject PagePermissionService PagePermissions
+
+<PageTitle>User Administration</PageTitle>
+
+@if (!_accessChecked)
+{
+    <p>Checking permissions...</p>
+}
+else if (!_isAdministrator)
+{
+    <p role="alert">You are not authorized to access user administration.</p>
+}
+else
+{
+<div class="user-admin-page">
+    <header class="page-header">
+        <div>
+            <p class="eyebrow">ADMINISTRATION</p>
+            <h1>User administration</h1>
+            <p class="page-description">Manage account status and reporting permissions.</p>
+        </div>
+        <a class="back-link" href="/administration">Back to administration</a>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="alert alert-danger" role="alert">@_error</div>
+    }
+
+    @if (_loading)
+    {
+        <div class="loading-panel"><span class="spinner-border spinner-border-sm" role="status"></span> Loading users...</div>
+    }
+    else
+    {
+        <section class="summary-grid" aria-label="User summary">
+            <div class="summary-card">
+                <span class="summary-label">Total users</span>
+                <strong>@_users.Count</strong>
+            </div>
+            <div class="summary-card">
+                <span class="summary-label">Active users</span>
+                <strong>@_users.Count(user => user.active)</strong>
+            </div>
+            <div class="summary-card">
+                <span class="summary-label">Administrators</span>
+                <strong>@_users.Count(user => user.administrator)</strong>
+            </div>
+        </section>
+
+        <section class="users-panel">
+            <div class="panel-heading">
+                <div>
+                    <h2>Users</h2>
+                    <p>Update permissions, then save changes for that user.</p>
+                </div>
+                <label class="search-box">
+                    <span class="bi bi-search" aria-hidden="true"></span>
+                    <input type="search" @bind="_searchTerm" @bind:event="oninput" placeholder="Search name or login" aria-label="Search users" />
+                </label>
+            </div>
+
+            @if (FilteredUsers.Count == 0)
+            {
+                <div class="empty-state">No users match your search.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table user-table align-middle">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Status</th>
+                                <th>Run reports</th>
+                                <th>Schedule</th>
+                                <th>Manage</th>
+                                <th>Admin</th>
+                                <th><span class="visually-hidden">Save changes</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var user in FilteredUsers)
+                            {
+                                <tr @key="user.userID">
+                                    <td>
+                                        <div class="user-identity">
+                                            <span class="user-avatar">@GetInitials(user.fullName, user.loginID)</span>
+                                            <span>
+                                                <strong>@(string.IsNullOrWhiteSpace(user.fullName) ? "Unnamed user" : user.fullName)</strong>
+                                                <small>@user.loginID</small>
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td><span class="status-pill @(user.active ? "active" : "inactive")">@(user.active ? "Active" : "Inactive")</span></td>
+                                    <td><input class="form-check-input permission-check" type="checkbox" @bind="user.runReports" aria-label="Run reports for @user.fullName" /></td>
+                                    <td><input class="form-check-input permission-check" type="checkbox" @bind="user.scheduleReports" aria-label="Schedule reports for @user.fullName" /></td>
+                                    <td><input class="form-check-input permission-check" type="checkbox" @bind="user.manageReports" aria-label="Manage reports for @user.fullName" /></td>
+                                    <td><input class="form-check-input permission-check" type="checkbox" @bind="user.administrator" aria-label="Administrator permission for @user.fullName" /></td>
+                                    <td class="save-cell">
+                                        <button class="btn btn-primary save-button" disabled="@_savingUsers.Contains(user.userID)" @onclick="() => SaveUserAsync(user)">
+                                            @(_savingUsers.Contains(user.userID) ? "Saving..." : "Save")
+                                        </button>
+                                        @if (_saveMessages.TryGetValue(user.userID, out var message))
+                                        {
+                                            <span class="save-message @(message.StartsWith("Saved", StringComparison.Ordinal) ? "success" : "failure")">@message</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    }
+</div>
+}
+
+@code {
+    private List<UserDetails> _users = new();
+    private readonly HashSet<int> _savingUsers = new();
+    private readonly Dictionary<int, string> _saveMessages = new();
+    private bool _loading = true;
+    private bool _accessChecked;
+    private bool _isAdministrator;
+    private string? _error;
+    private string _searchTerm = string.Empty;
+
+    private List<UserDetails> FilteredUsers => string.IsNullOrWhiteSpace(_searchTerm)
+        ? _users
+        : _users.Where(user =>
+            (user.fullName?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (user.loginID?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false))
+            .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isAdministrator = await PagePermissions.IsAdministratorAsync();
+        _accessChecked = true;
+        if (!_isAdministrator)
+        {
+            _loading = false;
+            return;
+        }
+
+        try
+        {
+            var users = await Http.GetFromJsonAsync<List<UserDetails>>("api/Admin/users");
+            _users = users ?? new List<UserDetails>();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Unable to load users: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SaveUserAsync(UserDetails user)
+    {
+        _savingUsers.Add(user.userID);
+        _saveMessages.Remove(user.userID);
+
+        try
+        {
+            using var response = await Http.PutAsJsonAsync($"api/Admin/users/{user.userID}", user);
+            if (response.IsSuccessStatusCode)
+            {
+                _saveMessages[user.userID] = "Saved";
+            }
+            else
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                _saveMessages[user.userID] = $"Save failed ({(int)response.StatusCode})";
+                _error = string.IsNullOrWhiteSpace(body) ? _saveMessages[user.userID] : body;
+            }
+        }
+        catch (Exception ex)
+        {
+            _saveMessages[user.userID] = "Save failed";
+            _error = ex.Message;
+        }
+        finally
+        {
+            _savingUsers.Remove(user.userID);
+        }
+    }
+
+    private static string GetInitials(string? name, string? login)
+    {
+        var source = string.IsNullOrWhiteSpace(name) ? login : name;
+        if (string.IsNullOrWhiteSpace(source))
+            return "?";
+
+        var parts = source.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length > 1
+            ? string.Concat(char.ToUpperInvariant(parts[0][0]), char.ToUpperInvariant(parts[^1][0]))
+            : source[..1].ToUpperInvariant();
+    }
+}
+
+<style>
+    .user-admin-page {
+        --admin-ink: #172b4d;
+        --admin-muted: #6b778c;
+        --admin-line: #e7ecf3;
+        max-width: 1440px;
+        margin: 0 auto;
+        padding: 2rem clamp(1rem, 3vw, 2.5rem);
+        color: var(--admin-ink);
+    }
+
+    .page-header, .panel-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1.25rem;
+    }
+
+    .page-header { margin-bottom: 1.75rem; }
+    .eyebrow { margin: 0 0 .35rem; color: #3867d6; font-size: .75rem; font-weight: 700; letter-spacing: .12em; }
+    .page-header h1 { margin: 0; font-size: clamp(1.8rem, 3vw, 2.4rem); font-weight: 700; }
+    .page-description, .panel-heading p { margin: .45rem 0 0; color: var(--admin-muted); }
+    .back-link { color: #3867d6; font-weight: 600; text-decoration: none; white-space: nowrap; }
+    .back-link:hover { text-decoration: underline; }
+
+    .summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+    .summary-card { padding: 1.15rem 1.35rem; background: #fff; border: 1px solid var(--admin-line); border-radius: .85rem; box-shadow: 0 5px 18px rgba(23, 43, 77, .04); }
+    .summary-label { display: block; margin-bottom: .35rem; color: var(--admin-muted); font-size: .85rem; }
+    .summary-card strong { font-size: 1.75rem; }
+
+    .users-panel { overflow: hidden; background: #fff; border: 1px solid var(--admin-line); border-radius: .9rem; box-shadow: 0 8px 28px rgba(23, 43, 77, .06); }
+    .panel-heading { padding: 1.35rem 1.5rem; border-bottom: 1px solid var(--admin-line); }
+    .panel-heading h2 { margin: 0; font-size: 1.2rem; font-weight: 700; }
+    .panel-heading p { font-size: .9rem; }
+    .search-box { display: flex; align-items: center; gap: .6rem; width: min(100%, 310px); padding: .55rem .8rem; border: 1px solid #dfe5ee; border-radius: .6rem; color: var(--admin-muted); }
+    .search-box input { width: 100%; border: 0; outline: 0; color: var(--admin-ink); }
+    .user-table { min-width: 850px; margin: 0; }
+    .user-table thead th { padding: .9rem 1rem; background: #f7f9fc; color: var(--admin-muted); font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .045em; white-space: nowrap; }
+    .user-table tbody td { padding: .85rem 1rem; border-color: var(--admin-line); }
+    .user-identity { display: flex; align-items: center; gap: .75rem; min-width: 220px; }
+    .user-identity strong, .user-identity small { display: block; }
+    .user-identity strong { font-size: .9rem; }
+    .user-identity small { margin-top: .15rem; color: var(--admin-muted); }
+    .user-avatar { display: grid; width: 2.4rem; height: 2.4rem; place-items: center; flex: 0 0 2.4rem; border-radius: 50%; background: #eaf0ff; color: #3867d6; font-size: .8rem; font-weight: 700; }
+    .status-pill { display: inline-block; padding: .28rem .6rem; border-radius: 999px; font-size: .75rem; font-weight: 700; }
+    .status-pill.active { background: #e7f7ef; color: #17804a; }
+    .status-pill.inactive { background: #f0f2f5; color: #6b778c; }
+    .permission-check { width: 1.05rem; height: 1.05rem; cursor: pointer; }
+    .save-cell { min-width: 115px; }
+    .save-button { min-width: 66px; padding: .35rem .65rem; font-size: .8rem; }
+    .save-message { display: block; margin-top: .25rem; font-size: .72rem; }
+    .save-message.success { color: #17804a; }
+    .save-message.failure { color: #c9372c; }
+    .empty-state, .loading-panel { padding: 2rem; color: var(--admin-muted); text-align: center; }
+
+    @@media (max-width: 700px) {
+        .page-header, .panel-heading { align-items: flex-start; flex-direction: column; }
+        .summary-grid { grid-template-columns: 1fr; }
+        .search-box { width: 100%; }
+    }
+</style>

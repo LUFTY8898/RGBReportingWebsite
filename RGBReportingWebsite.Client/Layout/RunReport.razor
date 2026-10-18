@@ -434,8 +434,6 @@
             fileBaseName = "Report";
 
         var parts = new List<string> { fileBaseName };
-        if (!string.IsNullOrWhiteSpace(_selectedManufacturer) && _selectedManufacturer != "ALL")
-            parts.Add($"M{_selectedManufacturer}");
         if (_fromDate.HasValue)
             parts.Add($"from {_fromDate.Value:dd-MM-yyyy}");
         if (_toDate.HasValue)
@@ -453,6 +451,15 @@
                 if (!string.IsNullOrWhiteSpace(selectedManager?.text))
                     parts.Add($"for {selectedManager.text.Trim()}");
             }
+        }
+
+        if (!string.IsNullOrWhiteSpace(_selectedManufacturer) && _selectedManufacturer != "ALL" &&
+            int.TryParse(_selectedManufacturer, out int selectedFirmCode))
+        {
+            var selectedManufacturer = _manufacturers
+                .FirstOrDefault(manufacturer => manufacturer.FirmCode == selectedFirmCode);
+            if (!string.IsNullOrWhiteSpace(selectedManufacturer?.FirmName))
+                parts.Add($"for {selectedManufacturer.FirmName.Trim()}");
         }
 
         string joined = string.Join(" ", parts);

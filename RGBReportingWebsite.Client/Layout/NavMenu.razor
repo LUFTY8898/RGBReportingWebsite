@@ -7,6 +7,9 @@
     </div>
 </div>
 
+@inject RGBReportingWebsite.Services.ReportDetailsService ReportDetailsService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
 <div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
     <nav class="nav flex-column">
         <div class="nav-item px-3">
@@ -14,29 +17,57 @@
                 <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Home
             </NavLink>
         </div>
+
         <AuthorizeView>
-        <Authorized>
-            <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="reportsMainMenu">
-                    <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span>
-                    Run Reports
-                </NavLink>
-            </div>
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="scheduleReports">
-                    <span class="bi bi-calendar-event" aria-hidden="true"></span>
-                    Schedule Reports
-                </NavLink>
-            </div>
+            <Authorized>
+                @if (_permissionsLoaded && _runReportsAllowed)
+                {
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="reportsMainMenu">
+                            <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span>
+                            Run Reports
+                        </NavLink>
+                    </div>
+                }
+
+                @if (_permissionsLoaded && _scheduleReportsAllowed)
+                {
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="scheduleReports">
+                            <span class="bi bi-calendar-event" aria-hidden="true"></span>
+                            Schedule Reports
+                        </NavLink>
+                    </div>
+                }
+
+                @if (_permissionsLoaded && _manageReportsAllowed)
+                {
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="manageReports">
+                            <span class="bi bi-tools" aria-hidden="true"></span>
+                            Manage Reports
+                        </NavLink>
+                    </div>
+                }
+
+                @if (_permissionsLoaded && _administrator)
+                {
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="administration">
+                            <span class="bi bi-shield-lock" aria-hidden="true"></span>
+                            Administration
+                        </NavLink>
+                    </div>
+                }
             </Authorized>
         </AuthorizeView>
+
         <div class="nav-item px-3">
             <NavLink class="nav-link" href="">
                 <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span><LoginDisplay />
             </NavLink>
         </div>
-    
-      
+
     </nav>
 </div>
 
@@ -48,5 +79,94 @@
     private void ToggleNavMenu()
     {
         collapseNavMenu = !collapseNavMenu;
+    }
+
+    private bool _runReportsAllowed = false;
+    private bool _scheduleReportsAllowed = false;
+    private bool _manageReportsAllowed = false;
+    private bool _administrator = false;
+    private bool _permissionsLoaded = false;
+
+    [System.Diagnostics.DebuggerStepThrough]
+    protected override async Task OnInitializedAsync()
+    {
+        // Subscribe to auth state changes so we refresh permissions when the user logs in/out
+        AuthenticationStateProvider.AuthenticationStateChanged += AuthenticationStateChanged;
+
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        await FetchPermissionsAsync(authState.User);
+    }
+
+    // Event handler must match the AuthenticationStateProvider.AuthenticationStateChanged delegate
+    // which expects a method returning void and taking Task<AuthenticationState>.
+    private async void AuthenticationStateChanged(Task<AuthenticationState> task)
+    {
+        try
+        {
+            var authState = await task;
+            await FetchPermissionsAsync(authState.User);
+        }
+        catch
+        {
+            // ignore
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task FetchPermissionsAsync(System.Security.Claims.ClaimsPrincipal? user)
+    {
+        _permissionsLoaded = false;
+
+        try
+        {
+            if (user?.Identity?.IsAuthenticated == true)
+            {
+                var login = user.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
+                    ?? user.FindFirst("preferred_username")?.Value
+                    ?? user.Identity?.Name;
+
+                if (!string.IsNullOrWhiteSpace(login))
+                {
+                    var ctx = await ReportDetailsService.GetUserContextAsync(login);
+                    if (ctx != null)
+                    {
+                        _runReportsAllowed = ctx.runReports == true;
+                        _scheduleReportsAllowed = ctx.scheduleReports == true;
+                        _manageReportsAllowed = ctx.manageReports == true;
+                        _administrator = ctx.administrator == true;
+                    }
+                    else
+                    {
+                        _runReportsAllowed = _scheduleReportsAllowed = _manageReportsAllowed = _administrator = false;
+                    }
+                }
+            }
+            else
+            {
+                _runReportsAllowed = _scheduleReportsAllowed = _manageReportsAllowed = _administrator = false;
+            }
+        }
+        catch
+        {
+            // ignore errors; leave defaults
+            _runReportsAllowed = _scheduleReportsAllowed = _manageReportsAllowed = _administrator = false;
+        }
+        finally
+        {
+            _permissionsLoaded = true;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            AuthenticationStateProvider.AuthenticationStateChanged -= AuthenticationStateChanged;
+        }
+        catch
+        {
+        }
     }
 }

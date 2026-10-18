@@ -18,8 +18,8 @@
 
   <ItemGroup>
     <!-- Required for Blazor WebAssembly hosted server helpers (UseBlazorFrameworkFiles) -->
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.12" />
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.13" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.13" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.1.1" />
     <PackageReference Include="TMS.FlexCel" Version="7.25.0" />
   </ItemGroup>

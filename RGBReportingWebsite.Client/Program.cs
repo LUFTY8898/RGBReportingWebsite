@@ -21,6 +21,7 @@ builder.Services.AddScoped(sp =>
     });
 
 builder.Services.AddScoped<ReportDetailsService>();
+builder.Services.AddScoped<PagePermissionService>();
 
 builder.Services.AddMsalAuthentication(options =>
 {
